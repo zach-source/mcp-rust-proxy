@@ -4,8 +4,15 @@ use tracing::{info, error};
 mod config;
 mod error;
 mod transport;
+mod state;
+mod server;
+mod proxy;
+mod web;
 
 use error::Result;
+use state::AppState;
+use server::ServerManager;
+use proxy::ProxyServer;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,17 +44,51 @@ async fn main() -> Result<()> {
         info!("Web UI will be available on {}:{}", config.web_ui.host, config.web_ui.port);
     }
 
-    // TODO: Initialize application state
-    // TODO: Start server manager
-    // TODO: Start proxy server
-    // TODO: Start web UI if enabled
+    // Initialize application state
+    let (state, shutdown_rx) = AppState::new(config);
+
+    // Start server manager
+    let server_manager = ServerManager::new(state.clone(), shutdown_rx.resubscribe());
+    let manager_handle = tokio::spawn(async move {
+        if let Err(e) = server_manager.run().await {
+            error!("Server manager error: {}", e);
+        }
+    });
+
+    // Start proxy server
+    let proxy_server = ProxyServer::new(state.clone());
+    let proxy_handle = tokio::spawn(async move {
+        if let Err(e) = proxy_server.run().await {
+            error!("Proxy server error: {}", e);
+        }
+    });
+
+    // Start web UI if enabled
+    let web_handle = if state.config.read().await.web_ui.enabled {
+        let web_state = state.clone();
+        Some(tokio::spawn(async move {
+            if let Err(e) = web::start_server(web_state).await {
+                error!("Web UI server error: {}", e);
+            }
+        }))
+    } else {
+        None
+    };
 
     // Wait for shutdown signal
     shutdown_signal().await;
 
     info!("Shutting down MCP Rust Proxy Server");
 
-    // TODO: Graceful shutdown
+    // Graceful shutdown
+    state.shutdown().await;
+
+    // Wait for tasks to complete
+    if let Some(web_handle) = web_handle {
+        let _ = tokio::join!(manager_handle, proxy_handle, web_handle);
+    } else {
+        let _ = tokio::join!(manager_handle, proxy_handle);
+    }
 
     Ok(())
 }

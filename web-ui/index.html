@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Proxy Server Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MCP Proxy Server Dashboard</h1>
+            <div class="stats">
+                <span>Total Servers: <span id="total-servers">0</span></span>
+                <span>Running: <span id="running-servers">0</span></span>
+                <span>Status: <span id="connection-status" class="status-indicator">Disconnected</span></span>
+            </div>
+        </header>
+
+        <main>
+            <section class="servers-section">
+                <h2>Servers</h2>
+                <div id="servers-list" class="servers-list">
+                    <!-- Server cards will be dynamically inserted here -->
+                </div>
+            </section>
+
+            <section class="metrics-section">
+                <h2>Metrics</h2>
+                <div id="metrics-container" class="metrics-container">
+                    <!-- Metrics will be displayed here -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
