@@ -1,0 +1,55 @@
+# Example MCP Proxy Configuration
+# Copy this file to mcp-proxy.yaml and modify as needed
+
+servers:
+  # Example stdio-based MCP server
+  example-stdio:
+    command: "mcp-server-example"
+    args: ["--port", "8080"]
+    env:
+      API_KEY: "${EXAMPLE_API_KEY}"
+    transport:
+      type: stdio
+    restartOnFailure: true
+    maxRestarts: 3
+    restartDelayMs: 5000
+
+  # Example HTTP/SSE-based MCP server
+  example-http:
+    command: "node"
+    args: ["./servers/http-server.js"]
+    transport:
+      type: httpSse
+      url: "http://localhost:8081/sse"
+      headers:
+        Authorization: "Bearer ${HTTP_SERVER_TOKEN:-default-token}"
+      timeoutMs: 30000
+
+  # Example WebSocket-based MCP server
+  example-websocket:
+    command: "python"
+    args: ["./servers/ws-server.py"]
+    transport:
+      type: webSocket
+      url: "ws://localhost:8082"
+      protocols: ["mcp-v1"]
+      autoReconnect: true
+
+proxy:
+  port: 3000
+  host: "0.0.0.0"
+  connectionPoolSize: 10
+  requestTimeoutMs: 30000
+  maxConcurrentRequests: 100
+
+webUI:
+  enabled: true
+  port: 3001
+  host: "0.0.0.0"
+  # Optional API key for web UI access
+  # apiKey: "${WEB_UI_API_KEY}"
+
+healthCheck:
+  intervalSeconds: 30
+  timeoutSeconds: 5
+  enabled: true
