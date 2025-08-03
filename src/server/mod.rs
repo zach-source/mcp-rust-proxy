@@ -24,7 +24,7 @@ impl ManagedServer {
         config: ServerConfig,
         state: Arc<AppState>,
     ) -> Result<Self> {
-        let transport = create_transport(&config.transport)?;
+        let transport = create_transport(&config.transport, &config)?;
         
         Ok(Self {
             name,

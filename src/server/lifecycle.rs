@@ -84,11 +84,40 @@ impl ServerManager {
             .map(|entry| entry.key().clone())
             .collect();
         
+        // Stop all servers in parallel
+        let mut stop_tasks = Vec::new();
         for name in servers {
-            if let Err(e) = self.stop_server(&name).await {
-                tracing::error!("Failed to stop server {}: {}", name, e);
-            }
+            let state = self.state.clone();
+            let name_clone = name.clone();
+            
+            stop_tasks.push(tokio::spawn(async move {
+                // First remove from connection pool to prevent new connections
+                state.connection_pool.remove(&name_clone);
+                
+                // Then close existing connections
+                if let Err(e) = Self::force_stop_server(&state, &name_clone).await {
+                    tracing::error!("Failed to stop server {}: {}", name_clone, e);
+                }
+            }));
         }
+        
+        // Wait for all servers to stop
+        for task in stop_tasks {
+            let _ = task.await;
+        }
+        
+        Ok(())
+    }
+    
+    async fn force_stop_server(state: &Arc<AppState>, name: &str) -> Result<()> {
+        // Update state
+        let _ = state.set_server_state(name, ServerState::Stopping).await;
+        
+        // Connection pool already handles closing connections
+        tracing::info!("Server {} stopped", name);
+        
+        // Update final state
+        let _ = state.set_server_state(name, ServerState::Stopped).await;
         
         Ok(())
     }

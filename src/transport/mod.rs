@@ -29,10 +29,24 @@ pub trait Connection: Send + Sync + 'static {
     fn is_closed(&self) -> bool;
 }
 
-pub fn create_transport(config: &crate::config::TransportConfig) -> Result<Arc<dyn Transport>> {
+pub fn create_transport(
+    config: &crate::config::TransportConfig,
+    server_config: &crate::config::ServerConfig,
+) -> Result<Arc<dyn Transport>> {
     match config {
         crate::config::TransportConfig::Stdio => {
-            Ok(Arc::new(stdio::StdioTransport::new()))
+            let mut transport = stdio::StdioTransport::new();
+            transport = transport.with_command(
+                server_config.command.clone(),
+                server_config.args.clone(),
+            );
+            if !server_config.env.is_empty() {
+                transport = transport.with_env(server_config.env.clone());
+            }
+            if let Some(ref working_dir) = server_config.working_directory {
+                transport = transport.with_working_dir(working_dir.clone());
+            }
+            Ok(Arc::new(transport))
         }
         crate::config::TransportConfig::HttpSse { url, headers, timeout_ms } => {
             Ok(Arc::new(http_sse::HttpSseTransport::new(

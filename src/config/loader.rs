@@ -1,7 +1,6 @@
 use figment::{Figment, providers::{Format, Toml, Json, Yaml, Env}};
 use crate::error::{ConfigError, Result};
 use super::schema::Config;
-use std::path::Path;
 
 pub async fn load_from_env_or_file() -> Result<Config> {
     let config: Config = Figment::new()
@@ -138,7 +137,7 @@ fn substitute_env_vars(input: &str) -> Result<String> {
     Ok(result)
 }
 
-pub async fn load_from_path<P: AsRef<Path>>(path: P) -> Result<Config> {
+pub async fn load_from_path<P: AsRef<std::path::Path>>(path: P) -> Result<Config> {
     let path = path.as_ref();
     
     let config = if path.extension().and_then(|e| e.to_str()) == Some("toml") {

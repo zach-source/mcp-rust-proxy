@@ -1,0 +1,135 @@
+# MCP Rust Proxy Configuration
+# Based on MCP servers from .claude.json
+
+servers:
+  # Context7 - Library documentation server
+  context7:
+    command: "/nix/store/8a852rx4sw6jaqz5m7wf6rb2z63x41l8-context7-mcp-1.0.14/bin/context7-mcp"
+    args: []
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+    maxRestarts: 3
+
+  # Fetch - Web content fetching
+  fetch:
+    command: "/nix/store/p2fsgnhjfz5a9p8fqi2ia35fca03skvw-mcp-server-fetch-2025.7.1/bin/mcp-server-fetch"
+    args: []
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+  # Filesystem - File system access
+  filesystem:
+    command: "/nix/store/apjxbw3ff380md24x0nmka3hi979drcr-nodejs-22.16.0/bin/npx"
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem@latest"
+      - "/Users/ztaylor/repos"
+      - "/Users/ztaylor/dotfiles"
+    env:
+      HOME: "/Users/ztaylor"
+      NODE_PATH: "/nix/store/apjxbw3ff380md24x0nmka3hi979drcr-nodejs-22.16.0/lib/node_modules"
+      PATH: "/nix/store/apjxbw3ff380md24x0nmka3hi979drcr-nodejs-22.16.0/bin:/nix/store/k1ib61q5hx8sywsdjj06zjbrq5rqli3m-bash-interactive-5.2p37/bin:/usr/bin:/bin"
+      XDG_CONFIG_HOME: "/Users/ztaylor/.config"
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+  # Git - Git repository operations
+  git:
+    command: "/nix/store/lrsprwy6jd7q0bpb7ns336170fvib3f6-mcp-server-git-2025.7.1/bin/mcp-server-git"
+    args:
+      - "--repository"
+      - "/Users/ztaylor/dotfiles/nix"
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+  # GitHub - GitHub API operations
+  github:
+    command: "/nix/store/0qkia2x94s32qm419brv215qkm5yl6yp-github-mcp-server/bin/github-mcp-server"
+    args:
+      - "stdio"
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+  # Memory - Persistent memory storage
+  memory:
+    command: "/nix/store/syriwihrly43z3cq3665ri50cmmy9fdd-mcp-server-memory-2025.7.1/bin/mcp-server-memory"
+    args: []
+    env:
+      MEMORY_FILE_PATH: "/Users/ztaylor/.config/memory-mcp/memory.db"
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+  # Playwright - Browser automation
+  playwright:
+    command: "/nix/store/y5q7lby0c9ljw7qbfcgs2aychvcr6qcq-playwright-mcp-0.0.30/bin/mcp-server-playwright"
+    args:
+      - "--executable-path"
+      - "/nix/store/3hdsy8q8y34nxqxd60cp8zcbjwhjx63v-google-chrome-138.0.7204.101/bin/google-chrome-stable"
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+    maxRestarts: 2 # Browser processes can be resource intensive
+
+  # Pulumi - Infrastructure as Code
+  # Note: This one uses SSE transport
+  pulumi:
+    command: "/nix/store/rbjbrfbajkkdw5fq4s0i0iw71nwixdlx-_at_pulumi_slash_mcp-server-0.1.6/bin/mcp-server"
+    args:
+      - "sse"
+    env: {}
+    transport:
+      type: httpSse
+      url: "http://localhost:8080/sse" # You may need to adjust this URL
+    restartOnFailure: true
+
+  # Sequential Thinking - Advanced reasoning
+  sequential-thinking:
+    command: "/nix/store/33k4c3cgm9jlvh4097w05x33dp5kpc14-mcp-server-sequential-thinking-2025.7.1/bin/mcp-server-sequential-thinking"
+    args: []
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+  # Time - Time and timezone utilities
+  time:
+    command: "/nix/store/blkyfy6pa9xkfzvqkpkhvhgk59wzbmrs-mcp-server-time-2025.7.1/bin/mcp-server-time"
+    args: []
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+# Proxy configuration
+proxy:
+  port: 3000
+  host: "0.0.0.0"
+  connectionPoolSize: 10
+  requestTimeoutMs: 30000
+  maxConcurrentRequests: 100
+
+# Web UI configuration
+webUi:
+  enabled: true
+  port: 3001
+  host: "0.0.0.0"
+  # Uncomment to add authentication
+  # apiKey: "${WEB_UI_API_KEY}"
+
+# Health check configuration
+healthCheck:
+  intervalSeconds: 30
+  timeoutSeconds: 5
+  enabled: true
+

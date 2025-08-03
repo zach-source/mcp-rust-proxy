@@ -144,11 +144,41 @@ impl Connection for StdioConnection {
         
         let mut child = self.child.lock().await;
         
-        // Try graceful shutdown first
-        if let Err(e) = child.kill().await {
-            tracing::warn!("Failed to kill child process: {}", e);
+        // Try graceful shutdown first with SIGTERM on Unix
+        #[cfg(unix)]
+        {
+            use nix::sys::signal::{self, Signal};
+            use nix::unistd::Pid;
+            
+            if let Some(id) = child.id() {
+                let pid = Pid::from_raw(id as i32);
+                let _ = signal::kill(pid, Signal::SIGTERM);
+                
+                // Give process time to exit gracefully
+                tokio::select! {
+                    _ = child.wait() => {
+                        tracing::debug!("Process exited gracefully");
+                    }
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(5)) => {
+                        tracing::warn!("Process did not exit gracefully, forcing kill");
+                        if let Err(e) = child.kill().await {
+                            tracing::error!("Failed to kill child process: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+        
+        #[cfg(not(unix))]
+        {
+            if let Err(e) = child.kill().await {
+                tracing::warn!("Failed to kill child process: {}", e);
+            }
         }
 
+        // Wait for the process to actually exit
+        let _ = child.wait().await;
+        
         Ok(())
     }
 

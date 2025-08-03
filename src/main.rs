@@ -1,5 +1,7 @@
 use tokio::signal;
 use tracing::{info, error};
+use clap::Parser;
+use std::path::PathBuf;
 
 mod config;
 mod error;
@@ -14,27 +16,62 @@ use state::AppState;
 use server::ServerManager;
 use proxy::ProxyServer;
 
+#[derive(Parser, Debug)]
+#[command(name = "mcp-rust-proxy")]
+#[command(about = "A fast and efficient Model Context Protocol (MCP) proxy server", long_about = None)]
+struct Args {
+    /// Path to configuration file (YAML/JSON/TOML)
+    #[arg(short, long, value_name = "FILE")]
+    config: Option<PathBuf>,
+    
+    /// Enable debug logging
+    #[arg(short, long)]
+    debug: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Parse command-line arguments
+    let args = Args::parse();
+    
     // Initialize tracing
+    let log_level = if args.debug { "debug" } else { "info" };
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("mcp_rust_proxy=debug".parse().unwrap())
+                .add_directive(format!("mcp_rust_proxy={}", log_level).parse().unwrap())
         )
         .init();
 
     info!("Starting MCP Rust Proxy Server");
 
     // Load configuration
-    let config = match config::load_from_env_or_file().await {
-        Ok(cfg) => {
-            info!("Configuration loaded successfully");
-            cfg
+    let config = match args.config {
+        Some(path) => {
+            info!("Loading configuration from: {}", path.display());
+            match config::load_from_path(&path).await {
+                Ok(cfg) => {
+                    info!("Configuration loaded successfully from {}", path.display());
+                    cfg
+                }
+                Err(e) => {
+                    error!("Failed to load configuration from {}: {}", path.display(), e);
+                    return Err(e);
+                }
+            }
         }
-        Err(e) => {
-            error!("Failed to load configuration: {}", e);
-            return Err(e);
+        None => {
+            info!("Loading configuration from default locations");
+            match config::load_from_env_or_file().await {
+                Ok(cfg) => {
+                    info!("Configuration loaded successfully");
+                    cfg
+                }
+                Err(e) => {
+                    error!("Failed to load configuration: {}", e);
+                    return Err(e);
+                }
+            }
         }
     };
 
@@ -80,14 +117,31 @@ async fn main() -> Result<()> {
 
     info!("Shutting down MCP Rust Proxy Server");
 
-    // Graceful shutdown
-    state.shutdown().await;
+    // Graceful shutdown with timeout
+    let shutdown_timeout = tokio::time::timeout(
+        tokio::time::Duration::from_secs(30),
+        async {
+            // Signal shutdown to all components
+            state.shutdown().await;
 
-    // Wait for tasks to complete
-    if let Some(web_handle) = web_handle {
-        let _ = tokio::join!(manager_handle, proxy_handle, web_handle);
-    } else {
-        let _ = tokio::join!(manager_handle, proxy_handle);
+            // Wait for tasks to complete
+            if let Some(web_handle) = web_handle {
+                let _ = tokio::join!(manager_handle, proxy_handle, web_handle);
+            } else {
+                let _ = tokio::join!(manager_handle, proxy_handle);
+            }
+        }
+    ).await;
+
+    match shutdown_timeout {
+        Ok(_) => {
+            info!("Graceful shutdown completed");
+        }
+        Err(_) => {
+            error!("Shutdown timeout exceeded, forcing exit");
+            // Force exit after timeout
+            std::process::exit(1);
+        }
     }
 
     Ok(())

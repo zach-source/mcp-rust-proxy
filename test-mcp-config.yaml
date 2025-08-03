@@ -1,0 +1,38 @@
+# Simplified test configuration with just a few MCP servers
+
+servers:
+  # Time server - simple and reliable for testing
+  time:
+    command: "/nix/store/blkyfy6pa9xkfzvqkpkhvhgk59wzbmrs-mcp-server-time-2025.7.1/bin/mcp-server-time"
+    args: []
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+  # Memory server - good for testing persistence
+  memory:
+    command: "/nix/store/syriwihrly43z3cq3665ri50cmmy9fdd-mcp-server-memory-2025.7.1/bin/mcp-server-memory"
+    args: []
+    env:
+      MEMORY_FILE_PATH: "/tmp/mcp-proxy-test-memory.db"
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+  # Sequential thinking - useful for testing
+  sequential-thinking:
+    command: "/nix/store/33k4c3cgm9jlvh4097w05x33dp5kpc14-mcp-server-sequential-thinking-2025.7.1/bin/mcp-server-sequential-thinking"
+    args: []
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+proxy:
+  port: 3000
+  host: "0.0.0.0"
+
+webUI:
+  enabled: true
+  port: 3001
