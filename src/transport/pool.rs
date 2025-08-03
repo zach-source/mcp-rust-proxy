@@ -26,8 +26,76 @@ impl ConnectionPool {
         
         // Create initial connection
         let connection = transport.connect().await?;
+        
+        // Perform MCP initialization handshake
+        self.initialize_connection(&server_name, &connection).await?;
+        
         self.connections.insert(server_name, connection);
         
+        Ok(())
+    }
+
+    async fn initialize_connection(&self, server_name: &str, conn: &Arc<dyn Connection>) -> Result<()> {
+        use crate::protocol::{JsonRpcMessage, JsonRpcV2Message, JsonRpcRequest, JsonRpcId};
+        
+        // Step 1: Send initialize request
+        let initialize_request = JsonRpcMessage::V2(JsonRpcV2Message::Request(JsonRpcRequest {
+            id: JsonRpcId::Number(1),
+            method: "initialize".to_string(),
+            params: Some(serde_json::json!({
+                "protocolVersion": "0.1.0",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "mcp-rust-proxy",
+                    "version": "0.1.0"
+                }
+            })),
+        }));
+        
+        let request_json = serde_json::to_string(&initialize_request)?;
+        let request_bytes = bytes::Bytes::from(format!("{}\n", request_json));
+        
+        tracing::debug!("Sending initialize request to {}", server_name);
+        conn.send(request_bytes).await?;
+        
+        // Wait for initialize response
+        let response_bytes = conn.recv().await?;
+        let response_str = std::str::from_utf8(&response_bytes)
+            .map_err(|e| crate::error::TransportError::InvalidFormat)?;
+        let response: JsonRpcMessage = serde_json::from_str(response_str.trim())?;
+        
+        // Verify we got a successful response
+        match response {
+            JsonRpcMessage::V2(JsonRpcV2Message::Response(resp)) => {
+                if resp.error.is_some() {
+                    return Err(crate::error::TransportError::ConnectionFailed(
+                        format!("Initialize failed for {}: {:?}", server_name, resp.error)
+                    ).into());
+                }
+                tracing::debug!("Received initialize response from {}: {:?}", server_name, resp.result);
+            }
+            _ => {
+                return Err(crate::error::TransportError::ConnectionFailed(
+                    format!("Invalid initialize response from {}", server_name)
+                ).into());
+            }
+        }
+        
+        // Step 2: Send initialized notification
+        let initialized_notification = JsonRpcMessage::V2(JsonRpcV2Message::Notification(
+            crate::protocol::JsonRpcNotification {
+                method: "initialized".to_string(),
+                params: None,
+            }
+        ));
+        
+        let notification_json = serde_json::to_string(&initialized_notification)?;
+        let notification_bytes = bytes::Bytes::from(format!("{}\n", notification_json));
+        
+        tracing::debug!("Sending initialized notification to {}", server_name);
+        conn.send(notification_bytes).await?;
+        
+        tracing::info!("Successfully initialized MCP connection to {}", server_name);
         Ok(())
     }
 
@@ -45,6 +113,10 @@ impl ConnectionPool {
         // Try to reconnect
         if let Some(transport) = self.transports.get(server_name) {
             let connection = transport.connect().await?;
+            
+            // Initialize the reconnected connection
+            self.initialize_connection(server_name, &connection).await?;
+            
             self.connections.insert(server_name.to_string(), connection.clone());
             Ok(connection)
         } else {

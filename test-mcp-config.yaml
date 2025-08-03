@@ -1,4 +1,6 @@
 # Simplified test configuration with just a few MCP servers
+# Health checks use MCP ping requests as per specification:
+# https://modelcontextprotocol.io/specification/2025-06-18/basic/utilities/ping
 
 servers:
   # Time server - simple and reliable for testing
@@ -30,9 +32,18 @@ servers:
     restartOnFailure: true
 
 proxy:
+  host: "127.0.0.1"
   port: 3000
-  host: "0.0.0.0"
+  connectionPoolSize: 10
+  requestTimeoutMs: 30000
+  maxConcurrentRequests: 100
 
-webUI:
+webUi:
   enabled: true
+  host: "127.0.0.1"
   port: 3001
+
+healthCheck:
+  enabled: false  # Disable for now - time server doesn't support ping
+  intervalSeconds: 60  # Run every minute when enabled
+  timeoutSeconds: 5

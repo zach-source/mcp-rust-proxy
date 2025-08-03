@@ -66,3 +66,4 @@ prometheus = "0.13"
 criterion = { version = "0.5", features = ["async_tokio"] }
 mockall = "0.13"
 tempfile = "3.12"
+tokio-test = "0.4"

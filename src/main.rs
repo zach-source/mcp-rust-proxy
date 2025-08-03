@@ -10,6 +10,7 @@ mod state;
 mod server;
 mod proxy;
 mod web;
+mod protocol;
 
 use error::Result;
 use state::AppState;

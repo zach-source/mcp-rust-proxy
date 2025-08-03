@@ -1,11 +1,14 @@
 use std::sync::Arc;
-use tokio::time::{interval, timeout};
+use std::sync::atomic::{AtomicI64, Ordering};
+use tokio::time::{interval, timeout, Duration};
 use crate::state::AppState;
 use crate::error::HealthError;
+use crate::protocol::{JsonRpcMessage, JsonRpcV2Message, JsonRpcId, mcp};
 
 pub struct HealthChecker {
     server_name: String,
     state: Arc<AppState>,
+    request_id_counter: AtomicI64,
 }
 
 impl HealthChecker {
@@ -13,10 +16,14 @@ impl HealthChecker {
         Self {
             server_name,
             state,
+            request_id_counter: AtomicI64::new(0),
         }
     }
 
     pub async fn run(self) {
+        // Give servers time to fully initialize after the handshake
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        
         let config = self.state.config.read().await;
         let interval_duration = config.health_check_interval();
         let timeout_duration = config.health_check_timeout();
@@ -64,32 +71,57 @@ impl HealthChecker {
             .await
             .map_err(|_| HealthError::Unhealthy)?;
         
-        // Send health check request
-        let health_request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "health",
-            "params": {},
-            "id": 1
-        });
+        // Create ping request with unique ID
+        let request_id = self.request_id_counter.fetch_add(1, Ordering::SeqCst);
+        let ping_request = mcp::create_ping_request(JsonRpcId::Number(request_id));
         
-        conn.send(bytes::Bytes::from(health_request.to_string()))
+        // Serialize and send ping request
+        let request_json = serde_json::to_string(&ping_request)
+            .map_err(|_| HealthError::InvalidResponse)?;
+        let request_bytes = bytes::Bytes::from(format!("{}\n", request_json));
+        
+        tracing::debug!("Sending ping request to {}: {}", self.server_name, request_json);
+        conn.send(request_bytes)
             .await
             .map_err(|_| HealthError::Unhealthy)?;
         
         // Wait for response
-        let response = conn.recv()
+        let response_bytes = conn.recv()
             .await
             .map_err(|_| HealthError::Unhealthy)?;
         
         // Parse response
-        let response: serde_json::Value = serde_json::from_slice(&response)
+        let response_str = std::str::from_utf8(&response_bytes)
             .map_err(|_| HealthError::InvalidResponse)?;
+        tracing::debug!("Received response from {}: {}", self.server_name, response_str.trim());
+        let response: JsonRpcMessage = serde_json::from_str(response_str.trim())
+            .map_err(|e| {
+                tracing::error!("Failed to parse response from {}: {}", self.server_name, e);
+                HealthError::InvalidResponse
+            })?;
         
-        // Check if healthy
-        if response["result"]["status"] == "healthy" {
-            Ok(())
-        } else {
-            Err(HealthError::Unhealthy)
+        // Check if it's a valid ping response
+        match response {
+            JsonRpcMessage::V2(JsonRpcV2Message::Response(resp)) => {
+                match resp.id {
+                    JsonRpcId::Number(id) if id == request_id => {
+                        // Check if response has error
+                        if resp.error.is_some() {
+                            return Err(HealthError::Unhealthy);
+                        }
+                        // Valid ping response
+                        Ok(())
+                    }
+                    _ => {
+                        tracing::warn!("Received response with mismatched ID for ping");
+                        Err(HealthError::InvalidResponse)
+                    }
+                }
+            }
+            _ => {
+                tracing::warn!("Received non-response message for ping");
+                Err(HealthError::InvalidResponse)
+            }
         }
     }
 
@@ -112,3 +144,7 @@ impl HealthChecker {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "health_tests.rs"]
+mod health_tests;

@@ -97,6 +97,9 @@ impl Connection for StdioConnection {
         }
 
         let mut stdin = self.stdin.lock().await;
+        
+        tracing::trace!("Sending to stdio: {}", std::str::from_utf8(&data).unwrap_or("<binary>"));
+        
         stdin.write_all(&data)
             .await
             .map_err(|e| TransportError::SendFailed(e.to_string()))?;
@@ -129,7 +132,9 @@ impl Connection for StdioConnection {
             // Check if we have a complete message
             if let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                 let message = buffer.split_to(pos + 1);
-                return Ok(message.freeze());
+                let msg_bytes = message.freeze();
+                tracing::trace!("Received from stdio: {}", std::str::from_utf8(&msg_bytes).unwrap_or("<binary>"));
+                return Ok(msg_bytes);
             }
 
             // Buffer is getting too large

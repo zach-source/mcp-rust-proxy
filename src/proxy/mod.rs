@@ -154,6 +154,7 @@ async fn handle_rpc_request(
     router: Arc<RequestRouter>,
     handler: Arc<RequestHandler>,
 ) -> std::result::Result<impl warp::Reply, warp::Rejection> {
+    tracing::debug!("Received RPC request: {:?}", request);
     let timer = crate::state::metrics::RequestTimer::new(state.metrics.clone());
     
     let response = match handler.handle_request(request, router).await {
@@ -178,3 +179,7 @@ async fn handle_rpc_request(
     
     Ok(warp::reply::json(&response))
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
