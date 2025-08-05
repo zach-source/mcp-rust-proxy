@@ -183,3 +183,6 @@ async fn handle_rpc_request(
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod cache_tests;

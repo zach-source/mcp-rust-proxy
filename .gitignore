@@ -2,3 +2,6 @@
 
 # Log files
 *.log
+
+# Yew UI build output
+/yew-dist

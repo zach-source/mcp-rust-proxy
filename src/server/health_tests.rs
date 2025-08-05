@@ -1,16 +1,119 @@
 #[cfg(test)]
 mod tests {
     use super::super::*;
-    use crate::test_utils::*;
-    use crate::protocol::{JsonRpcMessage, JsonRpcV2Message, JsonRpcResponse, JsonRpcId};
+    use crate::protocol::{JsonRpcMessage, JsonRpcV2Message, JsonRpcResponse};
     use crate::config::{Config, ProxyConfig, WebUIConfig, HealthCheckConfig};
     use crate::state::AppState;
-    use crate::transport::{Connection, TransportType};
+    use crate::transport::{Connection, Transport, TransportType};
     use bytes::Bytes;
     use serde_json::json;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::time::timeout;
+    use tokio::sync::{mpsc, RwLock};
+    
+    // Mock connection for testing
+    struct MockConnection {
+        request_tx: mpsc::UnboundedSender<Bytes>,
+        request_rx: Arc<RwLock<mpsc::UnboundedReceiver<Bytes>>>,
+        response_tx: mpsc::UnboundedSender<Bytes>,
+        response_rx: Arc<RwLock<mpsc::UnboundedReceiver<Bytes>>>,
+    }
+    
+    impl MockConnection {
+        fn new() -> Self {
+            let (request_tx, request_rx) = mpsc::unbounded_channel();
+            let (response_tx, response_rx) = mpsc::unbounded_channel();
+            Self {
+                request_tx,
+                request_rx: Arc::new(RwLock::new(request_rx)),
+                response_tx,
+                response_rx: Arc::new(RwLock::new(response_rx)),
+            }
+        }
+        
+        async fn add_response(&self, data: Bytes) {
+            let _ = self.response_tx.send(data);
+        }
+        
+        fn with_auto_initialize(self: Arc<Self>) -> Arc<Self> {
+            let conn = self.clone();
+            tokio::spawn(async move {
+                loop {
+                    let mut rx = conn.request_rx.write().await;
+                    match rx.recv().await {
+                        Some(request) => {
+                            drop(rx); // Drop the lock before processing
+                            let request_str = std::str::from_utf8(&request).unwrap();
+                            if let Ok(msg) = serde_json::from_str::<JsonRpcMessage>(request_str.trim()) {
+                                if let JsonRpcMessage::V2(JsonRpcV2Message::Request(req)) = msg {
+                                    if req.method == "initialize" {
+                                        // Send initialize response
+                                        let response = JsonRpcMessage::V2(JsonRpcV2Message::Response(JsonRpcResponse {
+                                            id: req.id,
+                                            result: Some(json!({
+                                                "protocolVersion": "0.1.0",
+                                                "capabilities": {},
+                                                "serverInfo": {
+                                                    "name": "mock-server",
+                                                    "version": "0.1.0"
+                                                }
+                                            })),
+                                            error: None,
+                                        }));
+                                        
+                                        let response_json = format!("{}\n", serde_json::to_string(&response).unwrap());
+                                        conn.add_response(Bytes::from(response_json)).await;
+                                    }
+                                }
+                            }
+                        }
+                        None => break,
+                    }
+                }
+            });
+            self
+        }
+    }
+    
+    #[async_trait::async_trait]
+    impl Connection for MockConnection {
+        async fn send(&self, data: Bytes) -> crate::error::Result<()> {
+            let _ = self.request_tx.send(data);
+            Ok(())
+        }
+        
+        async fn recv(&self) -> crate::error::Result<Bytes> {
+            let mut rx = self.response_rx.write().await;
+            rx.recv()
+                .await
+                .ok_or_else(|| crate::error::TransportError::ConnectionFailed("Connection closed".to_string()).into())
+        }
+        
+        async fn close(&self) -> crate::error::Result<()> {
+            Ok(())
+        }
+        
+        fn is_closed(&self) -> bool {
+            false
+        }
+    }
+    
+    struct MockTransport {
+        transport_type: TransportType,
+        connection: Arc<MockConnection>,
+    }
+    
+    #[async_trait::async_trait]
+    impl Transport for MockTransport {
+        async fn connect(&self) -> crate::error::Result<Arc<dyn Connection>> {
+            Ok(self.connection.clone() as Arc<dyn Connection>)
+        }
+        
+        fn transport_type(&self) -> TransportType {
+            self.transport_type.clone()
+        }
+    }
     
     fn create_test_config() -> Config {
         Config {
@@ -32,6 +135,8 @@ mod tests {
                 enabled: true,
                 interval_seconds: 1, // Fast for testing
                 timeout_seconds: 1,
+                max_attempts: 3,
+                retry_interval_seconds: 1,
             },
             servers: std::collections::HashMap::new(),
         }
@@ -43,13 +148,15 @@ mod tests {
         let (state, _) = AppState::new(config);
         
         // Create a mock connection that responds to ping
-        let mock_conn = Arc::new(MockConnection::new());
+        let mock_conn = Arc::new(MockConnection::new()).with_auto_initialize();
         let conn_clone = mock_conn.clone();
         
         // Spawn a task to respond to ping
         tokio::spawn(async move {
             // Wait for the ping request
-            let request = conn_clone.recv().await.unwrap();
+            let mut rx = conn_clone.request_rx.write().await;
+            let request = rx.recv().await.unwrap();
+            drop(rx); // Drop the lock before processing
             let request_str = std::str::from_utf8(&request).unwrap();
             let request_msg: JsonRpcMessage = serde_json::from_str(request_str.trim()).unwrap();
             
@@ -91,11 +198,13 @@ mod tests {
         let (state, _) = AppState::new(config);
         
         // Create a mock connection that responds with error
-        let mock_conn = Arc::new(MockConnection::new());
+        let mock_conn = Arc::new(MockConnection::new()).with_auto_initialize();
         let conn_clone = mock_conn.clone();
         
         tokio::spawn(async move {
-            let request = conn_clone.recv().await.unwrap();
+            let mut rx = conn_clone.request_rx.write().await;
+            let request = rx.recv().await.unwrap();
+            drop(rx); // Drop the lock before processing
             let request_str = std::str::from_utf8(&request).unwrap();
             let request_msg: JsonRpcMessage = serde_json::from_str(request_str.trim()).unwrap();
             
@@ -139,12 +248,14 @@ mod tests {
         let conn_clone = mock_conn.clone();
         
         tokio::spawn(async move {
-            let request = conn_clone.recv().await.unwrap();
+            let mut rx = conn_clone.request_rx.write().await;
+            let request = rx.recv().await.unwrap();
+            drop(rx); // Drop the lock before processing
             let _request_str = std::str::from_utf8(&request).unwrap();
             
             // Send response with wrong ID
             let response = JsonRpcMessage::V2(JsonRpcV2Message::Response(JsonRpcResponse {
-                id: JsonRpcId::Number(999), // Wrong ID
+                id: crate::protocol::JsonRpcId::Number(999), // Wrong ID
                 result: Some(json!({})),
                 error: None,
             }));
@@ -194,7 +305,8 @@ mod tests {
     async fn test_health_check_updates_server_state() {
         let mut config = create_test_config();
         config.health_check.interval_seconds = 1;
-        let (state, mut shutdown_rx) = AppState::new(config);
+        config.health_check.max_attempts = 1; // Fail fast for testing
+        let (state, _shutdown_rx) = AppState::new(config);
         
         // Set initial state to Running
         state.register_server("test-server".to_string(), crate::state::ServerInfo {
@@ -202,6 +314,8 @@ mod tests {
             state: Arc::new(tokio::sync::RwLock::new(crate::state::ServerState::Running)),
             process_handle: None,
             restart_count: Arc::new(tokio::sync::RwLock::new(0)),
+            last_health_check: Arc::new(tokio::sync::RwLock::new(None)),
+            last_access_time: Arc::new(tokio::sync::RwLock::new(None)),
         }).await;
         
         // Create a mock connection that fails

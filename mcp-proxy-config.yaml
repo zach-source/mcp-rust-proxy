@@ -20,6 +20,9 @@ servers:
     transport:
       type: stdio
     restartOnFailure: true
+    # This server doesn't support ping, so disable health checks
+    healthCheck:
+      enabled: false
 
   # Filesystem - File system access
   filesystem:
@@ -48,6 +51,9 @@ servers:
     transport:
       type: stdio
     restartOnFailure: true
+    # This server doesn't support ping, so disable health checks
+    healthCheck:
+      enabled: false
 
   # GitHub - GitHub API operations
   github:
@@ -58,6 +64,9 @@ servers:
     transport:
       type: stdio
     restartOnFailure: true
+    # Example: Override health check settings for this server
+    # healthCheck:
+    #   intervalSeconds: 120  # Check every 2 minutes instead of default
 
   # Memory - Persistent memory storage
   memory:
@@ -110,6 +119,9 @@ servers:
     transport:
       type: stdio
     restartOnFailure: true
+    # This server doesn't support ping, so disable health checks
+    healthCheck:
+      enabled: false
 
 # Proxy configuration
 proxy:
@@ -127,9 +139,12 @@ webUi:
   # Uncomment to add authentication
   # apiKey: "${WEB_UI_API_KEY}"
 
-# Health check configuration
+# Global health check configuration
+# These are defaults that can be overridden per server
 healthCheck:
-  intervalSeconds: 30
+  enabled: true  # Enable by default, can be disabled per server
+  intervalSeconds: 60  # Check every minute
   timeoutSeconds: 5
-  enabled: true
+  maxAttempts: 3  # Try 3 times before marking as unhealthy
+  retryIntervalSeconds: 10  # Wait 10 seconds between retry attempts
 

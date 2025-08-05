@@ -25,6 +25,7 @@ impl ConnectionPool {
         self.transports.insert(server_name.clone(), transport.clone());
         
         // Create initial connection
+        tracing::debug!("Creating connection for server: {}", server_name);
         let connection = transport.connect().await?;
         
         // Perform MCP initialization handshake

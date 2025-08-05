@@ -77,9 +77,15 @@ h2 {
     margin-bottom: 15px;
 }
 
+h3 {
+    color: #2c3e50;
+    font-size: 18px;
+    margin-bottom: 10px;
+}
+
 .servers-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
     gap: 15px;
 }
 
@@ -137,33 +143,75 @@ h2 {
 }
 
 .server-info {
-    font-size: 14px;
+    font-size: 13px;
     color: #666;
     margin-bottom: 10px;
 }
 
+.server-info > div {
+    margin-bottom: 4px;
+}
+
+.health-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.health-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.health-indicator.healthy {
+    background-color: #28a745;
+}
+
+.health-indicator.unhealthy {
+    background-color: #dc3545;
+}
+
+.health-indicator.disabled {
+    background-color: #6c757d;
+}
+
 .server-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .btn {
     padding: 6px 12px;
     border: none;
     border-radius: 4px;
-    font-size: 14px;
+    font-size: 13px;
     cursor: pointer;
     transition: all 0.2s ease;
     font-weight: 500;
 }
 
 .btn:hover {
-    opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
 }
 
 .btn-start {
@@ -179,6 +227,11 @@ h2 {
 .btn-restart {
     background-color: #ffc107;
     color: #333;
+}
+
+.btn-logs {
+    background-color: #17a2b8;
+    color: white;
 }
 
 .metrics-container {
@@ -207,6 +260,126 @@ h2 {
     color: #2c3e50;
 }
 
+/* Logs Modal */
+.logs-modal-content {
+    max-width: 1200px;
+    width: 75%;
+    height: 75vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.modal-header h3 {
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+    line-height: 1;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-btn:hover {
+    color: #333;
+}
+
+.logs-controls {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+    align-items: center;
+}
+
+.auto-scroll-label {
+    margin-left: auto;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.logs-container {
+    flex: 1;
+    min-height: 400px;
+    overflow-y: auto;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    padding: 15px;
+    border-radius: 4px;
+    line-height: 1.4;
+}
+
+.log-entry {
+    margin-bottom: 2px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.log-entry.error {
+    color: #f48771;
+}
+
+.log-entry.warn {
+    color: #dcdcaa;
+}
+
+.log-entry.info {
+    color: #4ec9b0;
+}
+
+.log-entry.debug {
+    color: #9cdcfe;
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background-color: white;
+    padding: 25px;
+    border-radius: 8px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
     header {
         flex-direction: column;
@@ -223,4 +396,14 @@ h2 {
     .servers-list {
         grid-template-columns: 1fr;
     }
+    
+    .logs-container {
+        height: 300px;
+    }
+}
+
+/* Time formatting */
+.time-ago {
+    font-size: 11px;
+    color: #999;
 }

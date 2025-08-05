@@ -29,6 +29,8 @@ pub struct ServerConfig {
     pub max_restarts: u32,
     #[serde(default = "default_restart_delay")]
     pub restart_delay_ms: u64,
+    #[serde(default)]
+    pub health_check: Option<ServerHealthCheckConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -92,6 +94,25 @@ pub struct HealthCheckConfig {
     pub timeout_seconds: u64,
     #[serde(default = "default_health_check_enabled")]
     pub enabled: bool,
+    #[serde(default = "default_max_attempts")]
+    pub max_attempts: u32,
+    #[serde(default = "default_retry_interval")]
+    pub retry_interval_seconds: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerHealthCheckConfig {
+    #[serde(default = "default_server_health_check_enabled")]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub interval_seconds: Option<u64>,
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>,
+    #[serde(default)]
+    pub max_attempts: Option<u32>,
+    #[serde(default)]
+    pub retry_interval_seconds: Option<u64>,
 }
 
 // Default value functions
@@ -155,6 +176,18 @@ fn default_health_check_enabled() -> bool {
     true
 }
 
+fn default_max_attempts() -> u32 {
+    3
+}
+
+fn default_retry_interval() -> u64 {
+    10
+}
+
+fn default_server_health_check_enabled() -> Option<bool> {
+    None
+}
+
 fn default_http_timeout() -> u64 {
     30000
 }
@@ -175,4 +208,47 @@ impl Config {
     pub fn request_timeout(&self) -> Duration {
         Duration::from_millis(self.proxy.request_timeout_ms)
     }
+    
+    /// Get the effective health check configuration for a specific server
+    pub fn get_server_health_check(&self, server_name: &str) -> Option<EffectiveHealthCheckConfig> {
+        let server = self.servers.get(server_name)?;
+        
+        // If global health checks are disabled, return None
+        if !self.health_check.enabled {
+            return None;
+        }
+        
+        // Check if server has health check configured
+        if let Some(server_hc) = &server.health_check {
+            // If server explicitly disables health checks, return None
+            if server_hc.enabled == Some(false) {
+                return None;
+            }
+        }
+        
+        // Build effective configuration
+        let server_hc = server.health_check.as_ref();
+        Some(EffectiveHealthCheckConfig {
+            interval_seconds: server_hc
+                .and_then(|hc| hc.interval_seconds)
+                .unwrap_or(self.health_check.interval_seconds),
+            timeout_seconds: server_hc
+                .and_then(|hc| hc.timeout_seconds)
+                .unwrap_or(self.health_check.timeout_seconds),
+            max_attempts: server_hc
+                .and_then(|hc| hc.max_attempts)
+                .unwrap_or(self.health_check.max_attempts),
+            retry_interval_seconds: server_hc
+                .and_then(|hc| hc.retry_interval_seconds)
+                .unwrap_or(self.health_check.retry_interval_seconds),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EffectiveHealthCheckConfig {
+    pub interval_seconds: u64,
+    pub timeout_seconds: u64,
+    pub max_attempts: u32,
+    pub retry_interval_seconds: u64,
 }

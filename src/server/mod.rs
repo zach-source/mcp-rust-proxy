@@ -24,7 +24,14 @@ impl ManagedServer {
         config: ServerConfig,
         state: Arc<AppState>,
     ) -> Result<Self> {
-        let transport = create_transport(&config.transport, &config)?;
+        // Get or create server info
+        let server_info = if let Some(existing) = state.servers.get(&name) {
+            Arc::new(existing.value().clone())
+        } else {
+            Arc::new(crate::state::ServerInfo::new(name.clone()))
+        };
+        
+        let transport = create_transport(&config.transport, &config, Some(server_info.clone()))?;
         
         Ok(Self {
             name,

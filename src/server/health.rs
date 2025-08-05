@@ -1,9 +1,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
-use tokio::time::{interval, timeout, Duration};
-use crate::state::AppState;
+use tokio::time::{interval, timeout, Duration, Instant};
+use crate::state::{AppState, HealthCheckStatus};
 use crate::error::HealthError;
 use crate::protocol::{JsonRpcMessage, JsonRpcV2Message, JsonRpcId, mcp};
+use chrono::Utc;
 
 pub struct HealthChecker {
     server_name: String,
@@ -24,12 +25,24 @@ impl HealthChecker {
         // Give servers time to fully initialize after the handshake
         tokio::time::sleep(Duration::from_secs(10)).await;
         
+        // Get effective health check configuration for this server
         let config = self.state.config.read().await;
-        let interval_duration = config.health_check_interval();
-        let timeout_duration = config.health_check_timeout();
+        let effective_config = match config.get_server_health_check(&self.server_name) {
+            Some(hc) => hc,
+            None => {
+                tracing::debug!("Health checks disabled for server: {}", self.server_name);
+                return;
+            }
+        };
+        
+        let interval_duration = Duration::from_secs(effective_config.interval_seconds);
+        let timeout_duration = Duration::from_secs(effective_config.timeout_seconds);
+        let max_attempts = effective_config.max_attempts;
+        let retry_interval = Duration::from_secs(effective_config.retry_interval_seconds);
         drop(config);
         
         let mut interval = interval(interval_duration);
+        let mut consecutive_failures = 0;
         
         loop {
             interval.tick().await;
@@ -40,25 +53,69 @@ impl HealthChecker {
                 break;
             }
             
-            // Perform health check
-            let result = timeout(
-                timeout_duration,
-                self.check_health()
-            ).await;
+            // Perform health check with retries
+            let mut attempt = 0;
+            let mut check_passed = false;
             
-            match result {
-                Ok(Ok(_)) => {
-                    tracing::trace!("Health check passed for server: {}", self.server_name);
-                    self.state.metrics.record_health_check(true);
+            let mut last_error = None;
+            let mut response_time_ms = None;
+            
+            while attempt < max_attempts {
+                if attempt > 0 {
+                    tokio::time::sleep(retry_interval).await;
                 }
-                Ok(Err(e)) => {
-                    tracing::warn!("Health check failed for server {}: {}", self.server_name, e);
-                    self.state.metrics.record_health_check(false);
-                    self.handle_unhealthy_server().await;
+                
+                let start_time = Instant::now();
+                let result = timeout(
+                    timeout_duration,
+                    self.check_health()
+                ).await;
+                let elapsed = start_time.elapsed();
+                
+                match result {
+                    Ok(Ok(_)) => {
+                        check_passed = true;
+                        response_time_ms = Some(elapsed.as_millis() as u64);
+                        break;
+                    }
+                    Ok(Err(e)) => {
+                        last_error = Some(format!("Health check failed: {}", e));
+                        tracing::debug!("Health check attempt {} failed for server {}: {}", 
+                                      attempt + 1, self.server_name, e);
+                    }
+                    Err(_) => {
+                        last_error = Some("Health check timed out".to_string());
+                        tracing::debug!("Health check attempt {} timed out for server: {}", 
+                                      attempt + 1, self.server_name);
+                    }
                 }
-                Err(_) => {
-                    tracing::warn!("Health check timed out for server: {}", self.server_name);
-                    self.state.metrics.record_health_check(false);
+                
+                attempt += 1;
+            }
+            
+            // Update health check status
+            if let Some(server_info) = self.state.servers.get(&self.server_name) {
+                let mut health_status = server_info.last_health_check.write().await;
+                *health_status = Some(HealthCheckStatus {
+                    timestamp: Utc::now(),
+                    success: check_passed,
+                    response_time_ms,
+                    error: if check_passed { None } else { last_error },
+                });
+            }
+            
+            if check_passed {
+                tracing::trace!("Health check passed for server: {}", self.server_name);
+                self.state.metrics.record_health_check(true);
+                consecutive_failures = 0;
+            } else {
+                tracing::warn!("Health check failed for server {} after {} attempts", 
+                             self.server_name, max_attempts);
+                self.state.metrics.record_health_check(false);
+                consecutive_failures += 1;
+                
+                // Only mark as unhealthy after multiple consecutive failures
+                if consecutive_failures >= 2 {
                     self.handle_unhealthy_server().await;
                 }
             }
@@ -148,3 +205,7 @@ impl HealthChecker {
 #[cfg(test)]
 #[path = "health_tests.rs"]
 mod health_tests;
+
+#[cfg(test)]
+#[path = "health_tracking_tests.rs"]
+mod health_tracking_tests;

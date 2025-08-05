@@ -4,6 +4,23 @@ use futures::{StreamExt, SinkExt};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use crate::state::AppState;
+use serde::{Deserialize, Serialize};
+use dashmap::DashMap;
+
+#[derive(Debug, Deserialize)]
+struct WsMessage {
+    #[serde(rename = "type")]
+    msg_type: String,
+    #[serde(default)]
+    server: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct WsResponse {
+    #[serde(rename = "type")]
+    msg_type: String,
+    data: serde_json::Value,
+}
 
 pub fn route(
     state: Arc<AppState>
@@ -32,26 +49,10 @@ async fn client_connected(ws: warp::ws::WebSocket, state: Arc<AppState>) {
     });
     
     // Send initial state
-    let servers: Vec<_> = state.servers.iter()
-        .map(|entry| {
-            let name = entry.key().clone();
-            let info = entry.value();
-            let state = info.state.try_read()
-                .map(|s| format!("{:?}", *s))
-                .unwrap_or_else(|_| "Unknown".to_string());
-            
-            serde_json::json!({
-                "name": name,
-                "state": state,
-            })
-        })
-        .collect();
-    
+    let initial_data = collect_state_update(&state).await;
     let msg = warp::ws::Message::text(serde_json::json!({
         "type": "initial",
-        "data": {
-            "servers": servers
-        }
+        "data": initial_data
     }).to_string());
     
     if let Err(e) = tx.send(msg) {
@@ -59,25 +60,37 @@ async fn client_connected(ws: warp::ws::WebSocket, state: Arc<AppState>) {
         return;
     }
     
+    // Track what the client is subscribed to
+    let subscriptions = Arc::new(DashMap::new());
+    
+    // Track previous state to send only changes
+    let mut previous_state = initial_data.clone();
+    
     // Subscribe to state changes
     let mut shutdown_rx = state.shutdown_tx.subscribe();
     
-    // Start update loop
-    let update_interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+    // Start update loop - reduce frequency to avoid constant UI refreshes
+    let update_interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
     tokio::pin!(update_interval);
     
     loop {
         tokio::select! {
             _ = update_interval.tick() => {
-                // Send periodic updates
-                let update = collect_state_update(&state).await;
-                let msg = warp::ws::Message::text(serde_json::json!({
-                    "type": "update",
-                    "data": update
-                }).to_string());
+                // Send periodic updates - only if something changed
+                let current_state = collect_state_update(&state).await;
                 
-                if tx.send(msg).is_err() {
-                    break;
+                // Only send if state has changed
+                if current_state != previous_state {
+                    let msg = warp::ws::Message::text(serde_json::json!({
+                        "type": "update",
+                        "data": current_state
+                    }).to_string());
+                    
+                    if tx.send(msg).is_err() {
+                        break;
+                    }
+                    
+                    previous_state = current_state;
                 }
             }
             _ = shutdown_rx.recv() => {
@@ -90,7 +103,11 @@ async fn client_connected(ws: warp::ws::WebSocket, state: Arc<AppState>) {
                         if msg.is_close() {
                             break;
                         }
-                        // Handle incoming messages if needed
+                        if let Ok(text) = msg.to_str() {
+                            if let Ok(ws_msg) = serde_json::from_str::<WsMessage>(text) {
+                                handle_ws_message(ws_msg, &state, &tx, &subscriptions).await;
+                            }
+                        }
                     }
                     Some(Err(e)) => {
                         tracing::error!("WebSocket error: {}", e);
@@ -106,20 +123,50 @@ async fn client_connected(ws: warp::ws::WebSocket, state: Arc<AppState>) {
 }
 
 async fn collect_state_update(state: &Arc<AppState>) -> serde_json::Value {
-    let servers: Vec<_> = state.servers.iter()
-        .map(|entry| {
-            let name = entry.key().clone();
-            let info = entry.value();
-            let state = info.state.try_read()
-                .map(|s| format!("{:?}", *s))
-                .unwrap_or_else(|_| "Unknown".to_string());
-            
+    let mut servers = Vec::new();
+    
+    for entry in state.servers.iter() {
+        let name = entry.key().clone();
+        let info = entry.value();
+        
+        let state_val = info.state.read().await;
+        let state_str = match *state_val {
+            crate::state::ServerState::Starting => "starting",
+            crate::state::ServerState::Running => "running",
+            crate::state::ServerState::Stopping => "stopping",
+            crate::state::ServerState::Stopped => "stopped",
+            crate::state::ServerState::Failed => "failed",
+        }.to_string();
+        
+        let restart_count = *info.restart_count.read().await;
+        
+        let last_health_check = info.last_health_check.read().await;
+        let health_check_data = last_health_check.as_ref().map(|hc| {
             serde_json::json!({
-                "name": name,
-                "state": state,
+                "timestamp": hc.timestamp.to_rfc3339(),
+                "success": hc.success,
+                "response_time_ms": hc.response_time_ms,
+                "error": hc.error
             })
-        })
-        .collect();
+        });
+        
+        let last_access_time = info.last_access_time.read().await;
+        let last_access = last_access_time.as_ref().map(|t| t.to_rfc3339());
+        
+        // Check if health checks are enabled for this server
+        let config = state.config.read().await;
+        let health_check_enabled = config.get_server_health_check(&name).is_some();
+        drop(config);
+        
+        servers.push(serde_json::json!({
+            "name": name,
+            "state": state_str,
+            "restart_count": restart_count,
+            "health_check_enabled": health_check_enabled,
+            "last_health_check": health_check_data,
+            "last_access_time": last_access
+        }));
+    }
     
     let metrics = state.metrics.gather_metrics();
     let total_servers = metrics.iter()
@@ -141,4 +188,81 @@ async fn collect_state_update(state: &Arc<AppState>) -> serde_json::Value {
             "running_servers": running_servers,
         }
     })
+}
+
+async fn handle_ws_message(
+    msg: WsMessage,
+    state: &Arc<AppState>,
+    tx: &mpsc::UnboundedSender<warp::ws::Message>,
+    subscriptions: &Arc<DashMap<String, bool>>,
+) {
+    match msg.msg_type.as_str() {
+        "subscribe_logs" => {
+            if let Some(server_name) = msg.server {
+                let subscription_key = format!("logs_{}", server_name);
+                subscriptions.insert(subscription_key.clone(), true);
+                
+                // Subscribe to log stream from server
+                if let Some(server_info) = state.servers.get(&server_name) {
+                    let server_info = server_info.value();
+                    let mut log_rx = server_info.subscribe_logs(subscription_key.clone());
+                    
+                    let tx_clone = tx.clone();
+                    let server_name_clone = server_name.clone();
+                    let subscriptions_clone = subscriptions.clone();
+                    
+                    tokio::spawn(async move {
+                        while let Some(log_entry) = log_rx.recv().await {
+                            // Check if still subscribed
+                            if !subscriptions_clone.contains_key(&subscription_key) {
+                                break;
+                            }
+                            
+                            let log_msg = serde_json::json!({
+                                "type": "log",
+                                "data": {
+                                    "server": server_name_clone,
+                                    "timestamp": log_entry.timestamp.to_rfc3339(),
+                                    "level": log_entry.level,
+                                    "message": log_entry.message,
+                                }
+                            });
+                            
+                            if tx_clone.send(warp::ws::Message::text(log_msg.to_string())).is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+                
+                // Don't send confirmation - client doesn't expect it
+                // let response = WsResponse {
+                //     msg_type: "subscribed".to_string(),
+                //     data: serde_json::json!({ "server": server_name, "type": "logs" }),
+                // };
+                // let _ = tx.send(warp::ws::Message::text(serde_json::to_string(&response).unwrap()));
+            }
+        }
+        "unsubscribe_logs" => {
+            if let Some(server_name) = msg.server {
+                let subscription_key = format!("logs_{}", server_name);
+                subscriptions.remove(&subscription_key);
+                
+                // Unsubscribe from server logs
+                if let Some(server_info) = state.servers.get(&server_name) {
+                    server_info.value().unsubscribe_logs(&subscription_key);
+                }
+                
+                // Don't send confirmation - client doesn't expect it
+                // let response = WsResponse {
+                //     msg_type: "unsubscribed".to_string(),
+                //     data: serde_json::json!({ "server": server_name, "type": "logs" }),
+                // };
+                // let _ = tx.send(warp::ws::Message::text(serde_json::to_string(&response).unwrap()));
+            }
+        }
+        _ => {
+            tracing::debug!("Unknown WebSocket message type: {}", msg.msg_type);
+        }
+    }
 }

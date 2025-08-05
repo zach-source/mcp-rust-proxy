@@ -6,12 +6,14 @@ authors = ["MCP Rust Proxy Contributors"]
 description = "A fast and efficient Model Context Protocol (MCP) proxy server"
 license = "MIT"
 repository = "https://github.com/zach-source/mcp-rust-proxy"
+build = "build.rs"
 
 [dependencies]
 # Async runtime
 tokio = { version = "1.40", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec", "compat"] }
 tokio-stream = "0.1"
+futures = "0.3"
 
 # Web framework
 warp = "0.3"
@@ -46,8 +48,9 @@ deadpool = "0.12"
 # Utilities
 uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+tracing-appender = "0.2"
+dirs = "5.0"
 num_cpus = "1.16"
-futures = "0.3"
 async-trait = "0.1"
 regex = "1.10"
 clap = { version = "4.4", features = ["derive"] }

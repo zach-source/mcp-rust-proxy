@@ -26,12 +26,45 @@
             </section>
 
             <section class="metrics-section">
-                <h2>Metrics</h2>
+                <h2>System Metrics</h2>
                 <div id="metrics-container" class="metrics-container">
                     <!-- Metrics will be displayed here -->
                 </div>
             </section>
+
         </main>
+    </div>
+
+    <!-- Server action modal -->
+    <div id="action-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>Confirm Action</h3>
+            <p id="action-message"></p>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="confirmAction()">Confirm</button>
+                <button class="btn btn-secondary" onclick="cancelAction()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs modal -->
+    <div id="logs-modal" class="modal" style="display: none;">
+        <div class="modal-content logs-modal-content">
+            <div class="modal-header">
+                <h3>Server Logs: <span id="logs-server-name"></span></h3>
+                <button class="close-btn" onclick="closeLogs()">&times;</button>
+            </div>
+            <div class="logs-controls">
+                <button class="btn btn-secondary" onclick="clearLogs()">Clear Logs</button>
+                <label class="auto-scroll-label">
+                    <input type="checkbox" id="auto-scroll" checked>
+                    Auto-scroll
+                </label>
+            </div>
+            <div id="logs-container" class="logs-container">
+                <!-- Logs will be streamed here -->
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>

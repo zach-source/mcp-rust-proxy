@@ -1,16 +1,28 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use serde_json::Value;
+use tokio::sync::RwLock;
 use crate::error::{Result, ProxyError};
 use crate::state::AppState;
 use super::{MCPResponse, MCPError, CallParams, ReadParams, RequestRouter};
 
+struct CachedResponse {
+    value: Value,
+    expires_at: Instant,
+}
+
+#[derive(Clone)]
 pub struct RequestHandler {
     state: Arc<AppState>,
+    tools_list_cache: Arc<RwLock<Option<CachedResponse>>>,
 }
 
 impl RequestHandler {
     pub fn new(state: Arc<AppState>) -> Self {
-        Self { state }
+        Self { 
+            state,
+            tools_list_cache: Arc::new(RwLock::new(None)),
+        }
     }
 
     pub async fn handle_request(
@@ -51,9 +63,51 @@ impl RequestHandler {
                 // Handle ping locally
                 serde_json::json!({})
             }
+            "tools/list" => {
+                // Check cache first
+                let cache = self.tools_list_cache.read().await;
+                if let Some(cached) = cache.as_ref() {
+                    if cached.expires_at > Instant::now() {
+                        tracing::debug!("Returning cached tools/list response");
+                        return Ok(MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id,
+                            result: Some(cached.value.clone()),
+                            error: None,
+                        });
+                    }
+                }
+                drop(cache);
+                
+                // Cache miss or expired, fetch fresh data
+                tracing::debug!("Cache miss for tools/list, fetching from servers");
+                match self.forward_to_all_servers(method, request.get("params")).await {
+                    Ok(result) => {
+                        // Update cache
+                        let mut cache = self.tools_list_cache.write().await;
+                        *cache = Some(CachedResponse {
+                            value: result.clone(),
+                            expires_at: Instant::now() + Duration::from_secs(120), // 2 minutes
+                        });
+                        result
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to fetch tools/list: {}", e);
+                        return Ok(MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id,
+                            result: None,
+                            error: Some(MCPError {
+                                code: -32603,
+                                message: "Failed to fetch tools list".to_string(),
+                                data: None,
+                            }),
+                        });
+                    }
+                }
+            }
             _ => {
-                // For unrecognized methods, try to forward to all servers
-                // This handles methods like "tools/list", "resources/list", etc.
+                // For other unrecognized methods, try to forward to all servers
                 match self.forward_to_all_servers(method, request.get("params")).await {
                     Ok(result) => result,
                     Err(_) => {
@@ -175,14 +229,52 @@ impl RequestHandler {
 
     async fn forward_to_all_servers(&self, method: &str, params: Option<&Value>) -> Result<Value> {
         // For methods like "tools/list", we need to aggregate results from all servers
-        let mut aggregated_results = Vec::new();
+        use futures::future::join_all;
+        use tokio::time::{timeout, Duration};
         
-        for entry in self.state.servers.iter() {
-            let server_name = entry.key();
-            match self.forward_to_server(server_name, method, params).await {
-                Ok(result) => aggregated_results.push(result),
-                Err(e) => {
+        // Collect server names
+        let server_names: Vec<String> = self.state.servers.iter()
+            .map(|entry| entry.key().clone())
+            .collect();
+        
+        // Create concurrent requests with timeout
+        let mut futures = Vec::new();
+        for server_name in server_names {
+            let method = method.to_string();
+            let params = params.cloned();
+            let handler = self.clone();
+            
+            futures.push(tokio::spawn(async move {
+                // Apply a per-server timeout of 5 seconds
+                let result = timeout(
+                    Duration::from_secs(5),
+                    handler.forward_to_server(&server_name, &method, params.as_ref())
+                ).await;
+                
+                match result {
+                    Ok(Ok(value)) => (server_name, Ok(value)),
+                    Ok(Err(e)) => (server_name, Err(e)),
+                    Err(_) => (server_name.clone(), Err(ProxyError::Timeout)),
+                }
+            }));
+        }
+        
+        // Wait for all requests to complete
+        let results = join_all(futures).await;
+        
+        // Collect successful results
+        let mut aggregated_results = Vec::new();
+        for result in results {
+            match result {
+                Ok((server_name, Ok(value))) => {
+                    tracing::debug!("Server {} successfully handled {}", server_name, method);
+                    aggregated_results.push(value);
+                }
+                Ok((server_name, Err(e))) => {
                     tracing::debug!("Server {} failed to handle {}: {}", server_name, method, e);
+                }
+                Err(e) => {
+                    tracing::warn!("Task join error: {}", e);
                 }
             }
         }
@@ -228,6 +320,12 @@ impl RequestHandler {
     }
     
     async fn forward_to_server(&self, server_name: &str, method: &str, params: Option<&Value>) -> Result<Value> {
+        // Update last access time
+        if let Some(server_info) = self.state.servers.get(server_name) {
+            let mut last_access = server_info.last_access_time.write().await;
+            *last_access = Some(chrono::Utc::now());
+        }
+        
         let conn = self.state.connection_pool.get(server_name).await?;
         
         let request = serde_json::json!({
@@ -252,5 +350,12 @@ impl RequestHandler {
         
         response.get("result").cloned()
             .ok_or_else(|| ProxyError::InvalidRequest("No result in response".to_string()))
+    }
+    
+    /// Clear the tools/list cache
+    pub async fn clear_cache(&self) {
+        let mut cache = self.tools_list_cache.write().await;
+        *cache = None;
+        tracing::debug!("Cleared tools/list cache");
     }
 }

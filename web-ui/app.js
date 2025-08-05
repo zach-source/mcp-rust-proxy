@@ -1,6 +1,8 @@
 let ws = null;
 let reconnectInterval = null;
 const API_BASE = '/api';
+let currentLogServer = null;
+let pendingAction = null;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
@@ -65,6 +67,11 @@ function handleWebSocketMessage(message) {
                 updateStats(message.data.stats);
             }
             break;
+        case 'log':
+            if (message.data.server === currentLogServer) {
+                appendLog(message.data);
+            }
+            break;
     }
 }
 
@@ -86,25 +93,88 @@ function createServerCard(server) {
     const isRunning = stateLower === 'running';
     const isStopped = stateLower === 'stopped';
     
+    // Format health check status
+    let healthStatus = '';
+    if (server.health_check_enabled) {
+        if (server.last_health_check) {
+            const isHealthy = server.last_health_check.success;
+            const healthClass = isHealthy ? 'healthy' : 'unhealthy';
+            const responseTime = server.last_health_check.response_time_ms 
+                ? `${server.last_health_check.response_time_ms}ms` 
+                : 'N/A';
+            healthStatus = `
+                <div>
+                    <span class="health-status">
+                        <span class="health-indicator ${healthClass}"></span>
+                        Health: ${isHealthy ? 'Healthy' : 'Unhealthy'} (${responseTime})
+                    </span>
+                </div>
+                <div class="time-ago">Last check: ${formatTimeAgo(server.last_health_check.timestamp)}</div>
+            `;
+        } else {
+            healthStatus = `
+                <div>
+                    <span class="health-status">
+                        <span class="health-indicator disabled"></span>
+                        Health: Pending
+                    </span>
+                </div>
+            `;
+        }
+    } else {
+        healthStatus = `
+            <div>
+                <span class="health-status">
+                    <span class="health-indicator disabled"></span>
+                    Health checks disabled
+                </span>
+            </div>
+        `;
+    }
+    
+    // Format last access time
+    const lastAccess = server.last_access_time 
+        ? `<div class="time-ago">Last accessed: ${formatTimeAgo(server.last_access_time)}</div>`
+        : '<div class="time-ago">Never accessed</div>';
+    
     card.innerHTML = `
         <div class="server-header">
             <span class="server-name">${server.name}</span>
             <span class="server-state ${stateLower}">${server.state}</span>
         </div>
         <div class="server-info">
-            ${server.restart_count !== undefined ? `Restarts: ${server.restart_count}` : ''}
+            <div>Restarts: ${server.restart_count || 0}</div>
+            ${healthStatus}
+            ${lastAccess}
         </div>
         <div class="server-actions">
             <button class="btn btn-start" ${!isStopped ? 'disabled' : ''} 
-                    onclick="serverAction('${server.name}', 'start')">Start</button>
+                    onclick="confirmServerAction('${server.name}', 'start')">Start</button>
             <button class="btn btn-stop" ${!isRunning ? 'disabled' : ''} 
-                    onclick="serverAction('${server.name}', 'stop')">Stop</button>
+                    onclick="confirmServerAction('${server.name}', 'stop')">Stop</button>
             <button class="btn btn-restart" ${!isRunning ? 'disabled' : ''} 
-                    onclick="serverAction('${server.name}', 'restart')">Restart</button>
+                    onclick="confirmServerAction('${server.name}', 'restart')">Restart</button>
+            <button class="btn btn-logs" onclick="viewLogs('${server.name}')">Logs</button>
         </div>
     `;
     
     return card;
+}
+
+function formatTimeAgo(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
+    
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    if (minutes > 0) return `${minutes}m ago`;
+    return `${seconds}s ago`;
 }
 
 function updateStats(stats) {
@@ -144,6 +214,8 @@ function displayMetrics(metrics) {
         { name: 'Failed Requests', key: 'mcp_proxy_requests_failed' },
         { name: 'Active Connections', key: 'mcp_proxy_active_connections' },
         { name: 'Connection Errors', key: 'mcp_proxy_connection_errors_total' },
+        { name: 'Health Checks', key: 'mcp_proxy_health_checks_total' },
+        { name: 'Failed Health Checks', key: 'mcp_proxy_health_checks_failed' },
     ];
     
     keyMetrics.forEach(({ name, key }) => {
@@ -158,6 +230,30 @@ function displayMetrics(metrics) {
             container.appendChild(card);
         }
     });
+}
+
+function confirmServerAction(serverName, action) {
+    pendingAction = { serverName, action };
+    const modal = document.getElementById('action-modal');
+    const message = document.getElementById('action-message');
+    
+    message.textContent = `Are you sure you want to ${action} the server "${serverName}"?`;
+    modal.style.display = 'flex';
+}
+
+function cancelAction() {
+    pendingAction = null;
+    document.getElementById('action-modal').style.display = 'none';
+}
+
+async function confirmAction() {
+    if (!pendingAction) return;
+    
+    const { serverName, action } = pendingAction;
+    document.getElementById('action-modal').style.display = 'none';
+    
+    await serverAction(serverName, action);
+    pendingAction = null;
 }
 
 async function serverAction(serverName, action) {
@@ -182,3 +278,66 @@ async function serverAction(serverName, action) {
         alert(`Error ${action} ${serverName}: ${error.message}`);
     }
 }
+
+function viewLogs(serverName) {
+    currentLogServer = serverName;
+    document.getElementById('logs-server-name').textContent = serverName;
+    document.getElementById('logs-container').innerHTML = '';
+    document.getElementById('logs-modal').style.display = 'flex';
+    
+    // Subscribe to logs via WebSocket
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'subscribe_logs',
+            server: serverName
+        }));
+    }
+}
+
+function closeLogs() {
+    if (currentLogServer && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'unsubscribe_logs',
+            server: currentLogServer
+        }));
+    }
+    
+    currentLogServer = null;
+    document.getElementById('logs-modal').style.display = 'none';
+    document.getElementById('logs-container').innerHTML = '';
+}
+
+function clearLogs() {
+    document.getElementById('logs-container').innerHTML = '';
+}
+
+function appendLog(logData) {
+    const container = document.getElementById('logs-container');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    
+    // Add log level class if available
+    if (logData.level) {
+        entry.classList.add(logData.level.toLowerCase());
+    }
+    
+    entry.textContent = logData.message || logData.line || JSON.stringify(logData);
+    container.appendChild(entry);
+    
+    // Auto-scroll if enabled
+    if (document.getElementById('auto-scroll').checked) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+// Modal close on outside click
+window.onclick = function(event) {
+    const actionModal = document.getElementById('action-modal');
+    const logsModal = document.getElementById('logs-modal');
+    
+    if (event.target === actionModal) {
+        cancelAction();
+    } else if (event.target === logsModal) {
+        closeLogs();
+    }
+};

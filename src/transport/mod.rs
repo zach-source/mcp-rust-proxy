@@ -32,6 +32,7 @@ pub trait Connection: Send + Sync + 'static {
 pub fn create_transport(
     config: &crate::config::TransportConfig,
     server_config: &crate::config::ServerConfig,
+    server_info: Option<Arc<crate::state::ServerInfo>>,
 ) -> Result<Arc<dyn Transport>> {
     match config {
         crate::config::TransportConfig::Stdio => {
@@ -45,6 +46,12 @@ pub fn create_transport(
             }
             if let Some(ref working_dir) = server_config.working_directory {
                 transport = transport.with_working_dir(working_dir.clone());
+            }
+            if let Some(server_info) = server_info {
+                tracing::debug!("Adding server_info to transport for server: {}", server_info.name);
+                transport = transport.with_server_info(server_info);
+            } else {
+                tracing::warn!("No server_info provided when creating stdio transport");
             }
             Ok(Arc::new(transport))
         }

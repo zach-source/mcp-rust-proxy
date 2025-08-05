@@ -6,6 +6,12 @@ use crate::state::AppState;
 pub mod api;
 pub mod ws;
 
+#[cfg(test)]
+mod api_tests;
+
+#[cfg(test)]
+mod ws_tests;
+
 pub async fn start_server(state: Arc<AppState>) -> Result<()> {
     let config = state.config.read().await;
     let addr = format!("{}:{}", config.web_ui.host, config.web_ui.port);
@@ -40,23 +46,10 @@ fn create_routes(
     api_key: Option<String>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     // API routes
-    let api_routes = api::routes(state.clone())
-        .with(warp::cors()
-            .allow_any_origin()
-            .allow_methods(vec!["GET", "POST", "PUT", "DELETE"])
-            .allow_headers(vec!["Content-Type", "Authorization"]));
+    let api_routes = api::routes(state.clone());
     
     // WebSocket route
     let ws_route = ws::route(state.clone());
-    
-    // Static files
-    let static_files = warp::path("static")
-        .and(warp::fs::dir("web-ui"));
-    
-    // Index route
-    let index = warp::path::end()
-        .and(warp::get())
-        .and(warp::fs::file("web-ui/index.html"));
     
     // Health check
     let health = warp::path("health")
@@ -66,18 +59,41 @@ fn create_routes(
             "service": "mcp-proxy-web-ui"
         })));
     
+    // Check if Yew UI is built
+    let yew_dist_path = std::path::Path::new("yew-dist");
+    let use_yew_ui = yew_dist_path.exists() && yew_dist_path.is_dir();
+    
+    if use_yew_ui {
+        tracing::info!("Using compiled Yew UI from yew-dist/");
+    } else {
+        tracing::info!("Using legacy web UI from web-ui/");
+    }
+    
+    // Static files - always use directory approach
+    let static_dir = if use_yew_ui {
+        "yew-dist"
+    } else {
+        "web-ui"
+    };
+    let static_files = warp::fs::dir(static_dir);
+    
     // Combine all routes
     let routes = api_routes
         .or(ws_route)
-        .or(static_files)
-        .or(index)
-        .or(health);
+        .or(health)
+        .or(static_files);
+    
+    // Apply CORS to all routes
+    let routes_with_cors = routes.with(warp::cors()
+        .allow_any_origin()
+        .allow_methods(vec!["GET", "POST", "PUT", "DELETE"])
+        .allow_headers(vec!["Content-Type", "Authorization"]));
     
     // Add API key authentication if configured
     if let Some(key) = api_key {
-        routes.and(api_key_auth(key)).boxed()
+        routes_with_cors.and(api_key_auth(key)).boxed()
     } else {
-        routes.boxed()
+        routes_with_cors.boxed()
     }
 }
 
