@@ -75,7 +75,10 @@
         };
 
         # Build dependencies only (for caching)
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+          # Ensure pkg-config is available during dependency build
+          nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ pkgs.pkg-config pkgs.openssl.dev ];
+        });
 
         # Function to build for a specific target
         buildForTarget = target: extraArgs: craneLib.buildPackage (commonArgs // {
