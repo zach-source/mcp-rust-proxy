@@ -187,7 +187,7 @@
             
             # Testing tools
             cargo-nextest
-            cargo-llvm-cov
+            # cargo-llvm-cov # Currently broken in nixpkgs
             
             # For generating flamegraphs
             cargo-flamegraph
