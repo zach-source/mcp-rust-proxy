@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "yew-ui"]
+resolver = "2"
+
 [package]
 name = "mcp-rust-proxy"
 version = "0.1.0"
