@@ -316,6 +316,8 @@ mod tests {
             restart_count: Arc::new(tokio::sync::RwLock::new(0)),
             last_health_check: Arc::new(tokio::sync::RwLock::new(None)),
             last_access_time: Arc::new(tokio::sync::RwLock::new(None)),
+            log_subscribers: Arc::new(dashmap::DashMap::new()),
+            logger: None,
         }).await;
         
         // Create a mock connection that fails

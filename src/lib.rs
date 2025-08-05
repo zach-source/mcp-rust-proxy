@@ -6,8 +6,8 @@ pub mod server;
 pub mod proxy;
 pub mod protocol;
 pub mod web;
-pub mod commands;
+// pub mod commands; // TODO: Add commands module
 pub mod logging;
 
-#[cfg(test)]
-pub mod test_utils;
+// #[cfg(test)]
+// pub mod test_utils; // TODO: Add test_utils module

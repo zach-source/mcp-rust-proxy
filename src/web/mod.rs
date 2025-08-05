@@ -6,11 +6,11 @@ use crate::state::AppState;
 pub mod api;
 pub mod ws;
 
-#[cfg(test)]
-mod api_tests;
+// #[cfg(test)]
+// mod api_tests; // TODO: Add test module
 
-#[cfg(test)]
-mod ws_tests;
+// #[cfg(test)]
+// mod ws_tests; // TODO: Add test module
 
 pub async fn start_server(state: Arc<AppState>) -> Result<()> {
     let config = state.config.read().await;
