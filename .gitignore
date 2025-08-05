@@ -5,3 +5,15 @@
 
 # Yew UI build output
 /yew-dist
+
+# Nix
+result
+result-*
+.direnv/
+
+# Local overrides
+.envrc.local
+.env
+
+# Cachix
+cachix-key.secret

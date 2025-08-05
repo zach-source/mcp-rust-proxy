@@ -1,0 +1,194 @@
+name: Release (Nix Optimized)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g., v0.0.1)'
+        required: true
+        type: string
+
+env:
+  CACHIX_CACHE: mcp-rust-proxy
+
+jobs:
+  build:
+    name: Build all targets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            max-jobs = auto
+            cores = 0
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v13
+        with:
+          name: ${{ env.CACHIX_CACHE }}
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          extraPullNames: nix-community
+
+      - name: Build x86_64-linux
+        run: |
+          nix build .#x86_64-linux --no-link --print-build-logs
+          nix build .#x86_64-linux --out-link result-x86_64-linux
+
+      - name: Build aarch64-linux
+        run: |
+          nix build .#aarch64-linux --no-link --print-build-logs
+          nix build .#aarch64-linux --out-link result-aarch64-linux
+
+      - name: Build Docker image
+        run: |
+          nix build .#docker --no-link --print-build-logs
+          nix build .#docker --out-link result-docker
+
+      - name: Create archives
+        run: |
+          # x86_64-linux
+          mkdir -p dist-x86_64-linux
+          cp result-x86_64-linux/bin/mcp-rust-proxy dist-x86_64-linux/
+          cp README.md LICENSE CHANGELOG.md dist-x86_64-linux/
+          tar czf mcp-rust-proxy-x86_64-linux.tar.gz -C dist-x86_64-linux .
+          
+          # aarch64-linux
+          mkdir -p dist-aarch64-linux
+          cp result-aarch64-linux/bin/mcp-rust-proxy dist-aarch64-linux/
+          cp README.md LICENSE CHANGELOG.md dist-aarch64-linux/
+          tar czf mcp-rust-proxy-aarch64-linux.tar.gz -C dist-aarch64-linux .
+          
+          # Docker image
+          docker load < result-docker
+          docker tag mcp-rust-proxy:latest mcp-rust-proxy:${{ github.ref_name }}
+          docker save mcp-rust-proxy:${{ github.ref_name }} | gzip > mcp-rust-proxy-docker.tar.gz
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: |
+            mcp-rust-proxy-x86_64-linux.tar.gz
+            mcp-rust-proxy-aarch64-linux.tar.gz
+            mcp-rust-proxy-docker.tar.gz
+
+  build-macos:
+    name: Build macOS targets
+    strategy:
+      matrix:
+        include:
+          - os: macos-12
+            target: x86_64-darwin
+            arch: x86_64
+          - os: macos-14
+            target: aarch64-darwin
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            max-jobs = auto
+            cores = 0
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v13
+        with:
+          name: ${{ env.CACHIX_CACHE }}
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          extraPullNames: nix-community
+
+      - name: Build ${{ matrix.target }}
+        run: |
+          nix build .#${{ matrix.target }} --no-link --print-build-logs
+          nix build .#${{ matrix.target }} --out-link result
+
+      - name: Create archive
+        run: |
+          mkdir -p dist
+          cp result/bin/mcp-rust-proxy dist/
+          cp README.md LICENSE CHANGELOG.md dist/
+          tar czf mcp-rust-proxy-${{ matrix.arch }}-macos.tar.gz -C dist .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-rust-proxy-${{ matrix.arch }}-macos
+          path: mcp-rust-proxy-${{ matrix.arch }}-macos.tar.gz
+
+  release:
+    name: Create Release
+    needs: [build, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f -name "*.tar.gz"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            artifacts/**/*.tar.gz
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            ### Binary Installation
+            
+            Download the appropriate binary for your platform:
+            - Linux x86_64: `mcp-rust-proxy-x86_64-linux.tar.gz`
+            - Linux ARM64: `mcp-rust-proxy-aarch64-linux.tar.gz`
+            - macOS x86_64: `mcp-rust-proxy-x86_64-macos.tar.gz`
+            - macOS ARM64: `mcp-rust-proxy-aarch64-macos.tar.gz`
+            
+            Extract and run:
+            ```bash
+            tar xzf mcp-rust-proxy-*.tar.gz
+            ./mcp-rust-proxy --config mcp-proxy.yaml
+            ```
+
+            ### Docker Installation
+            
+            ```bash
+            docker load < mcp-rust-proxy-docker.tar.gz
+            docker run -p 3000:3000 -p 3001:3001 -v /path/to/config:/config mcp-rust-proxy:${{ github.ref_name }} --config /config/mcp-proxy.yaml
+            ```
+
+            ### Nix Installation
+            
+            ```bash
+            nix run github:zach-source/mcp-rust-proxy/${{ github.ref_name }}
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

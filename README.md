@@ -269,7 +269,59 @@ The proxy server is built with:
 
 ## Development
 
-### Building
+### Building with Nix (Recommended)
+
+The project includes a Nix flake for reproducible builds and development environments:
+
+```bash
+# Enter development shell with all tools
+nix develop
+
+# Build the project
+nix build
+
+# Build for specific platforms
+nix build .#x86_64-linux
+nix build .#aarch64-linux
+nix build .#x86_64-darwin    # macOS only
+nix build .#aarch64-darwin    # macOS only
+
+# Build Docker image
+nix build .#docker
+
+# Run directly
+nix run github:zach-source/mcp-rust-proxy
+```
+
+#### Using direnv (Automatic Environment)
+
+```bash
+# Install direnv: https://direnv.net
+direnv allow
+
+# Now all tools are automatically available when you cd into the project
+```
+
+#### Setting up Cachix (For Faster Builds)
+
+To use the binary cache for faster builds:
+
+```bash
+# Install cachix
+nix-env -iA cachix -f https://cachix.org/api/v1/install
+
+# Use the project's cache
+cachix use mcp-rust-proxy
+```
+
+For maintainers building and pushing to cache:
+
+```bash
+# Build and push to cache
+nix build .#x86_64-linux | cachix push mcp-rust-proxy
+```
+
+### Building with Cargo
 
 ```bash
 # Build without UI (faster for development)
