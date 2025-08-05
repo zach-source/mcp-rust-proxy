@@ -53,6 +53,9 @@
           trunk
           wasm-bindgen-cli
           binaryen
+          # Ensure we have the right linker
+          clang
+          lld
         ];
 
         # Source filtering to improve caching
@@ -78,6 +81,8 @@
         cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
           # Ensure pkg-config is available during dependency build
           nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ pkgs.pkg-config pkgs.openssl.dev ];
+          # Disable any custom linker configuration that might conflict
+          CARGO_TARGET_DIR = "target";
         });
 
         # Function to build for a specific target
@@ -87,6 +92,11 @@
           
           # Set environment variables for the build
           BUILD_YEW_UI = "1";
+          
+          # Override any user-specific linker configuration
+          CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (pkgs.stdenv.isDarwin && target == "x86_64-apple-darwin") "cc";
+          CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (pkgs.stdenv.isDarwin && target == "aarch64-apple-darwin") "cc";
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = pkgs.lib.optionalString (target == "x86_64-unknown-linux-gnu") "cc";
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = 
             pkgs.lib.optionalString (target == "aarch64-unknown-linux-gnu") 
               "${pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc}/bin/aarch64-unknown-linux-gnu-gcc";
