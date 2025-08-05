@@ -1,5 +1,5 @@
-pub mod websocket;
 pub mod log_stream;
+pub mod websocket;
 
 use crate::types::{ApiResponse, MetricsResponse, ServersResponse};
 use gloo_net::http::Request;

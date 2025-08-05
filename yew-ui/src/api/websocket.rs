@@ -41,7 +41,7 @@ impl WebSocketService {
         };
         let host = location.host()?;
         let ws_url = format!("{}//{}/api/ws", protocol, host);
-        
+
         web_sys::console::log_1(&format!("Connecting to WebSocket: {}", ws_url).into());
 
         let ws = WebSocket::new(&ws_url)?;
@@ -55,20 +55,22 @@ impl WebSocketService {
                 if let Ok(msg) = serde_json::from_str::<WsMessage>(&msg_str) {
                     callback.emit(msg);
                 } else {
-                    web_sys::console::error_1(&format!("Failed to parse WS message: {}", msg_str).into());
+                    web_sys::console::error_1(
+                        &format!("Failed to parse WS message: {}", msg_str).into(),
+                    );
                 }
             }
         });
         ws.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
         onmessage_callback.forget();
-        
+
         // Set up open handler
         let onopen_callback = Closure::<dyn FnMut()>::new(move || {
             web_sys::console::log_1(&"WebSocket connected successfully".into());
         });
         ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
         onopen_callback.forget();
-        
+
         // Set up error handler
         let onerror_callback = Closure::<dyn FnMut(_)>::new(move |e: web_sys::ErrorEvent| {
             web_sys::console::error_1(&format!("WebSocket error: {:?}", e).into());

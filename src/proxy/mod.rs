@@ -1,24 +1,24 @@
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use crate::error::{Result, ProxyError};
+use crate::error::{ProxyError, Result};
 use crate::state::AppState;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use warp::Filter;
 
-pub mod router;
 pub mod handler;
+pub mod router;
 
-pub use router::RequestRouter;
 pub use handler::RequestHandler;
+pub use router::RequestRouter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method")]
 pub enum MCPRequest {
     #[serde(rename = "list")]
     List { params: ListParams },
-    
+
     #[serde(rename = "call")]
     Call { params: CallParams },
-    
+
     #[serde(rename = "read")]
     Read { params: ReadParams },
 }
@@ -28,10 +28,10 @@ pub enum MCPRequest {
 pub enum ListParams {
     #[serde(rename = "tools")]
     Tools,
-    
+
     #[serde(rename = "resources")]
     Resources,
-    
+
     #[serde(rename = "prompts")]
     Prompts,
 }
@@ -75,7 +75,7 @@ impl ProxyServer {
     pub fn new(state: Arc<AppState>) -> Self {
         let router = Arc::new(RequestRouter::new());
         let handler = Arc::new(RequestHandler::new(state.clone()));
-        
+
         Self {
             state,
             router,
@@ -85,32 +85,31 @@ impl ProxyServer {
 
     pub async fn run(self) -> Result<()> {
         tracing::info!("Starting proxy server");
-        
+
         // Build initial routing maps
         self.build_routing_maps().await?;
-        
+
         // Start the server based on configuration
         let config = self.state.config.read().await;
         let addr = format!("{}:{}", config.proxy.host, config.proxy.port);
         drop(config);
-        
+
         tracing::info!("Proxy server listening on {}", addr);
-        
+
         // Create warp routes
         let routes = self.create_routes();
-        
+
         // Start server
-        let (_addr, server) = warp::serve(routes)
-            .bind_with_graceful_shutdown(
-                addr.parse::<std::net::SocketAddr>()
-                    .map_err(|e| ProxyError::Config(crate::error::ConfigError::Parse(e.to_string())))?,
-                async move {
-                    let _ = self.state.shutdown_tx.subscribe().recv().await;
-                }
-            );
-        
+        let (_addr, server) = warp::serve(routes).bind_with_graceful_shutdown(
+            addr.parse::<std::net::SocketAddr>()
+                .map_err(|e| ProxyError::Config(crate::error::ConfigError::Parse(e.to_string())))?,
+            async move {
+                let _ = self.state.shutdown_tx.subscribe().recv().await;
+            },
+        );
+
         server.await;
-        
+
         tracing::info!("Proxy server stopped");
         Ok(())
     }
@@ -122,11 +121,13 @@ impl ProxyServer {
         Ok(())
     }
 
-    fn create_routes(&self) -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn create_routes(
+        &self,
+    ) -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
         let state = self.state.clone();
         let router = self.router.clone();
         let handler = self.handler.clone();
-        
+
         // JSON-RPC endpoint
         let rpc = warp::path::end()
             .and(warp::post())
@@ -135,15 +136,15 @@ impl ProxyServer {
             .and(warp::any().map(move || router.clone()))
             .and(warp::any().map(move || handler.clone()))
             .and_then(handle_rpc_request);
-        
+
         // Health check endpoint
-        let health = warp::path("health")
-            .and(warp::get())
-            .map(|| warp::reply::json(&serde_json::json!({
+        let health = warp::path("health").and(warp::get()).map(|| {
+            warp::reply::json(&serde_json::json!({
                 "status": "healthy",
                 "service": "mcp-proxy"
-            })));
-        
+            }))
+        });
+
         rpc.or(health)
     }
 }
@@ -156,7 +157,7 @@ async fn handle_rpc_request(
 ) -> std::result::Result<impl warp::Reply, warp::Rejection> {
     tracing::debug!("Received RPC request: {:?}", request);
     let timer = crate::state::metrics::RequestTimer::new(state.metrics.clone());
-    
+
     let response = match handler.handle_request(request, router).await {
         Ok(resp) => {
             timer.finish();
@@ -176,7 +177,7 @@ async fn handle_rpc_request(
             }
         }
     };
-    
+
     Ok(warp::reply::json(&response))
 }
 

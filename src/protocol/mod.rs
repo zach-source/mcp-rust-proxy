@@ -58,15 +58,15 @@ pub struct JsonRpcError {
 // MCP-specific message types
 pub mod mcp {
     use super::*;
-    
+
     pub const PING_METHOD: &str = "ping";
-    
+
     #[derive(Debug, Serialize, Deserialize)]
     pub struct PingRequest {}
-    
+
     #[derive(Debug, Serialize, Deserialize)]
     pub struct PingResponse {}
-    
+
     pub fn create_ping_request(id: JsonRpcId) -> JsonRpcMessage {
         JsonRpcMessage::V2(JsonRpcV2Message::Request(JsonRpcRequest {
             id,

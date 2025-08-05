@@ -21,16 +21,8 @@ pub fn header(props: &HeaderProps) -> Html {
         WsStatus::Disconnected => "Disconnected",
     };
 
-    let total_servers = props
-        .stats
-        .as_ref()
-        .map(|s| s.total_servers)
-        .unwrap_or(0);
-    let running_servers = props
-        .stats
-        .as_ref()
-        .map(|s| s.running_servers)
-        .unwrap_or(0);
+    let total_servers = props.stats.as_ref().map(|s| s.total_servers).unwrap_or(0);
+    let running_servers = props.stats.as_ref().map(|s| s.running_servers).unwrap_or(0);
 
     html! {
         <header>

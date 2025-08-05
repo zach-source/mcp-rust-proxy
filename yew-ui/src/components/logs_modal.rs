@@ -22,17 +22,14 @@ pub fn logs_modal(props: &LogsModalProps) -> Html {
         let logs_container_ref = logs_container_ref.clone();
         let logs_len = props.logs.len();
         let auto_scroll = *auto_scroll;
-        
-        use_effect_with(
-            (logs_len, auto_scroll),
-            move |_| {
-                if auto_scroll {
-                    if let Some(element) = logs_container_ref.cast::<web_sys::HtmlElement>() {
-                        element.set_scroll_top(element.scroll_height());
-                    }
+
+        use_effect_with((logs_len, auto_scroll), move |_| {
+            if auto_scroll {
+                if let Some(element) = logs_container_ref.cast::<web_sys::HtmlElement>() {
+                    element.set_scroll_top(element.scroll_height());
                 }
-            },
-        );
+            }
+        });
     }
 
     let on_auto_scroll_change = {
@@ -76,7 +73,7 @@ pub fn logs_modal(props: &LogsModalProps) -> Html {
                         let level_class = log.level.as_ref()
                             .map(|l| l.to_lowercase())
                             .unwrap_or_default();
-                        
+
                         let content = log.message.as_ref()
                             .map(|s| s.as_str())
                             .unwrap_or("");

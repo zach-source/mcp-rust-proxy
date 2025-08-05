@@ -1,11 +1,11 @@
+use crate::config::Config;
+use crate::error::Result;
+use crate::logging::ServerLogger;
+use crate::transport::pool::ConnectionPool;
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::config::Config;
-use crate::transport::pool::ConnectionPool;
-use crate::error::Result;
-use crate::logging::ServerLogger;
-use chrono::{DateTime, Utc};
 
 pub mod metrics;
 
@@ -61,7 +61,7 @@ pub struct HealthCheckStatus {
 impl AppState {
     pub fn new(config: Config) -> (Arc<Self>, tokio::sync::broadcast::Receiver<()>) {
         let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(16);
-        
+
         let state = Arc::new(Self {
             config: Arc::new(RwLock::new(config)),
             servers: Arc::new(DashMap::new()),
@@ -69,20 +69,20 @@ impl AppState {
             connection_pool: Arc::new(ConnectionPool::new()),
             shutdown_tx,
         });
-        
+
         (state, shutdown_rx)
     }
 
     pub async fn update_config(&self, new_config: Config) -> Result<()> {
         // Validate new config
         crate::config::validate(&new_config)?;
-        
+
         // Update config
         let mut config = self.config.write().await;
         *config = new_config;
-        
+
         // TODO: Notify all components of config change
-        
+
         Ok(())
     }
 
@@ -110,14 +110,14 @@ impl AppState {
         if let Some(info) = self.servers.get(name) {
             let mut state = info.state.write().await;
             *state = new_state;
-            
+
             // Update metrics
             match new_state {
                 ServerState::Running => self.metrics.increment_running_servers(),
                 ServerState::Failed => self.metrics.increment_failed_servers(),
                 _ => {}
             }
-            
+
             Ok(())
         } else {
             Err(crate::error::ProxyError::ServerNotFound(name.to_string()))
@@ -126,13 +126,13 @@ impl AppState {
 
     pub async fn shutdown(&self) {
         tracing::info!("Initiating application shutdown");
-        
+
         // Send shutdown signal to all components
         let _ = self.shutdown_tx.send(());
-        
+
         // Close all connections
         let _ = self.connection_pool.close_all().await;
-        
+
         // Stop all servers
         for entry in self.servers.iter() {
             let mut state = entry.value().state.write().await;
@@ -143,7 +143,7 @@ impl AppState {
     pub fn is_shutting_down(&self) -> bool {
         self.shutdown_tx.receiver_count() == 0
     }
-    
+
     pub async fn broadcast_update(&self) {
         // This is a placeholder for WebSocket broadcasting
         // In a real implementation, this would notify all connected WebSocket clients
@@ -172,14 +172,20 @@ impl ServerInfo {
     pub fn broadcast_log(&self, log_entry: LogEntry) {
         // Send to all subscribers
         let subscriber_count = self.log_subscribers.len();
-        tracing::debug!("Broadcasting log to {} subscribers: {}", subscriber_count, log_entry.message);
-        
-        self.log_subscribers.retain(|_id, sender| {
-            sender.send(log_entry.clone()).is_ok()
-        });
+        tracing::debug!(
+            "Broadcasting log to {} subscribers: {}",
+            subscriber_count,
+            log_entry.message
+        );
+
+        self.log_subscribers
+            .retain(|_id, sender| sender.send(log_entry.clone()).is_ok());
     }
 
-    pub fn subscribe_logs(&self, subscriber_id: String) -> tokio::sync::mpsc::UnboundedReceiver<LogEntry> {
+    pub fn subscribe_logs(
+        &self,
+        subscriber_id: String,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<LogEntry> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         self.log_subscribers.insert(subscriber_id, tx);
         rx

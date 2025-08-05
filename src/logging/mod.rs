@@ -1,11 +1,11 @@
-use std::path::{Path, PathBuf};
-use std::fs;
-use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
-use tokio::fs::{File, OpenOptions};
-use tokio::sync::Mutex;
-use chrono::{DateTime, Utc, Local};
 use crate::error::Result;
+use chrono::{DateTime, Local, Utc};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tokio::fs::{File, OpenOptions};
+use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
 
 const MAX_LOG_SIZE: u64 = 10 * 1024 * 1024; // 10MB
 const LOG_ROTATION_DAYS: i64 = 2;
@@ -23,8 +23,12 @@ impl ServerLogger {
         let log_dir = if let Some(dir) = base_log_dir {
             dir
         } else {
-            let home = dirs::home_dir()
-                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Could not determine home directory"))?;
+            let home = dirs::home_dir().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Could not determine home directory",
+                )
+            })?;
             home.join(".mcp-proxy").join("logs")
         };
 
@@ -72,7 +76,7 @@ impl ServerLogger {
         let log_bytes = log_line.as_bytes();
 
         let mut size = self.current_log_size.lock().await;
-        
+
         // Check if rotation is needed
         if *size + log_bytes.len() as u64 > MAX_LOG_SIZE {
             // Rotate the log file
@@ -99,7 +103,7 @@ impl ServerLogger {
         let mut writer_guard = self.log_writer.lock().await;
         writer_guard.write_all(log_bytes).await?;
         writer_guard.flush().await?;
-        
+
         *size += log_bytes.len() as u64;
 
         Ok(())
@@ -108,8 +112,10 @@ impl ServerLogger {
     async fn rotate_log(&self) -> Result<()> {
         let current_path = Self::get_log_path(&self.log_dir);
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-        let rotated_path = self.log_dir.join(format!("{}.{}.log", self.server_name, timestamp));
-        
+        let rotated_path = self
+            .log_dir
+            .join(format!("{}.{}.log", self.server_name, timestamp));
+
         if current_path.exists() {
             tokio::fs::rename(&current_path, &rotated_path).await?;
         }
@@ -119,7 +125,7 @@ impl ServerLogger {
 
     async fn cleanup_old_logs(log_dir: &Path) -> Result<()> {
         let cutoff_time = Utc::now() - chrono::Duration::days(LOG_ROTATION_DAYS);
-        
+
         let mut entries = tokio::fs::read_dir(log_dir).await?;
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
@@ -150,4 +156,3 @@ impl ServerLogger {
         Ok(())
     }
 }
-

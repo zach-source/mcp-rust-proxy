@@ -208,16 +208,16 @@ impl Config {
     pub fn request_timeout(&self) -> Duration {
         Duration::from_millis(self.proxy.request_timeout_ms)
     }
-    
+
     /// Get the effective health check configuration for a specific server
     pub fn get_server_health_check(&self, server_name: &str) -> Option<EffectiveHealthCheckConfig> {
         let server = self.servers.get(server_name)?;
-        
+
         // If global health checks are disabled, return None
         if !self.health_check.enabled {
             return None;
         }
-        
+
         // Check if server has health check configured
         if let Some(server_hc) = &server.health_check {
             // If server explicitly disables health checks, return None
@@ -225,7 +225,7 @@ impl Config {
                 return None;
             }
         }
-        
+
         // Build effective configuration
         let server_hc = server.health_check.as_ref();
         Some(EffectiveHealthCheckConfig {

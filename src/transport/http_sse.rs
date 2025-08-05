@@ -1,10 +1,10 @@
+use super::{Connection, Transport, TransportType};
+use crate::error::{Result, TransportError};
 use async_trait::async_trait;
 use bytes::Bytes;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use crate::error::{TransportError, Result};
-use super::{Connection, Transport, TransportType};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub struct HttpSseTransport {
     url: String,
@@ -53,7 +53,8 @@ impl Connection for HttpSseConnection {
         }
 
         // TODO: Implement actual SSE send
-        let _response = self.client
+        let _response = self
+            .client
             .post(&format!("{}/message", self.url))
             .body(data)
             .send()

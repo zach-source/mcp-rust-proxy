@@ -1,9 +1,9 @@
+use super::{Connection, Transport, TransportType};
+use crate::error::{Result, TransportError};
 use async_trait::async_trait;
 use bytes::Bytes;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::error::{TransportError, Result};
-use super::{Connection, Transport, TransportType};
+use std::sync::Arc;
 
 pub struct WebSocketTransport {
     url: String,
