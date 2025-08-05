@@ -1,7 +1,6 @@
 use crate::types::LogData;
-use gloo_net::eventsource::EventSource;
 use wasm_bindgen::prelude::*;
-use web_sys::MessageEvent;
+use web_sys::{EventSource, MessageEvent};
 use yew::prelude::*;
 
 pub struct LogStreamService {
