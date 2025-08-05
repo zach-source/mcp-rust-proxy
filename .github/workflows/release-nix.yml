@@ -15,7 +15,37 @@ env:
   CACHIX_CACHE: mcp-rust-proxy
 
 jobs:
+  # Run tests first before building releases
+  test:
+    name: Test before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v14
+      
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+      
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: ${{ env.CACHIX_CACHE }}
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      
+      - name: Run tests
+        run: |
+          nix develop --command cargo test --all-features
+      
+      - name: Run clippy
+        run: |
+          nix develop --command cargo clippy --all-features -- -D warnings
+
   build:
+    needs: test
     name: Build all targets
     runs-on: ubuntu-latest
     steps:
@@ -24,20 +54,16 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v24
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-            max-jobs = auto
-            cores = 0
-
+        uses: DeterminateSystems/nix-installer-action@v14
+      
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+      
       - name: Setup Cachix
-        uses: cachix/cachix-action@v13
+        uses: cachix/cachix-action@v15
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-          extraPullNames: nix-community
 
       - name: Build x86_64-linux
         run: |
@@ -100,20 +126,16 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v24
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-            max-jobs = auto
-            cores = 0
-
+        uses: DeterminateSystems/nix-installer-action@v14
+      
+      - name: Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+      
       - name: Setup Cachix
-        uses: cachix/cachix-action@v13
+        uses: cachix/cachix-action@v15
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-          extraPullNames: nix-community
 
       - name: Build ${{ matrix.target }}
         run: |
