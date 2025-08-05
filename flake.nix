@@ -92,6 +92,8 @@
           
           # Set environment variables for the build
           BUILD_YEW_UI = "1";
+          CARGO_REGISTRIES_CRATES_IO_PROTOCOL = "sparse";
+          RUSTFLAGS = "--cfg rustc_1_82";
           
           # Override any user-specific linker configuration
           CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (pkgs.stdenv.isDarwin && target == "x86_64-apple-darwin") "cc";
