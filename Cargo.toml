@@ -70,3 +70,11 @@ criterion = { version = "0.5", features = ["async_tokio"] }
 mockall = "0.13"
 tempfile = "3.12"
 tokio-test = "0.4"
+
+[features]
+default = []
+vendored-openssl = ["openssl/vendored"]
+
+[dependencies.openssl]
+version = "0.10"
+optional = false
