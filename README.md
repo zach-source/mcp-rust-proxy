@@ -2,10 +2,13 @@
 
 A fast and efficient Model Context Protocol (MCP) proxy server written in Rust. This proxy aggregates multiple MCP servers and provides a unified interface, with built-in monitoring, health checks, and a web UI for management.
 
+**New**: The project now includes a modern Yew-based web UI alongside the original HTML/JS UI. See [Yew UI Integration](YEW_UI_INTEGRATION.md) for details.
+
 ## Features
 
 - **Multi-Server Proxy**: Aggregate multiple MCP servers into a single endpoint
 - **Multiple Transports**: Support for stdio, HTTP/SSE, and WebSocket transports
+- **File-based Logging**: All server output captured to rotating log files with real-time streaming
 - **Configuration Management**: YAML/JSON configuration with environment variable substitution
 - **Server Lifecycle Management**: Start, stop, and restart individual servers
 - **Health Monitoring**: Automatic health checks with configurable intervals
@@ -39,10 +42,168 @@ webUI:
 2. Run the proxy server:
 
 ```bash
-cargo run
+cargo run -- --config mcp-proxy.yaml
 ```
 
 3. Access the web UI at `http://localhost:3001`
+
+## Using with Claude Code
+
+MCP Rust Proxy works seamlessly with Claude Code to manage multiple MCP servers. Here are some example configurations:
+
+### Example 1: Multiple Tool Servers
+
+```yaml
+servers:
+  filesystem-server:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/username/projects"]
+    transport:
+      type: stdio
+    env:
+      NODE_OPTIONS: "--max-old-space-size=4096"
+  
+  github-server:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    transport:
+      type: stdio
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+  
+  postgres-server:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
+    transport:
+      type: stdio
+
+proxy:
+  port: 3000
+  host: "127.0.0.1"
+
+webUI:
+  enabled: true
+  port: 3001
+```
+
+Then configure Claude Code to use the proxy:
+
+```json
+{
+  "mcpServers": {
+    "proxy": {
+      "command": "node",
+      "args": ["/path/to/mcp-client-proxy.js", "http://localhost:3000"]
+    }
+  }
+}
+```
+
+### Example 2: Development Environment
+
+```yaml
+servers:
+  # Code intelligence server
+  code-intel:
+    command: "rust-analyzer"
+    args: ["--stdio"]
+    transport:
+      type: stdio
+    
+  # Database tools
+  db-tools:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-sqlite", "./dev.db"]
+    transport:
+      type: stdio
+  
+  # Custom project server
+  project-server:
+    command: "python"
+    args: ["./scripts/mcp_server.py"]
+    transport:
+      type: stdio
+    env:
+      PROJECT_ROOT: "${PWD}"
+      DEBUG: "true"
+
+# Health checks for critical servers
+healthChecks:
+  code-intel:
+    enabled: true
+    intervalSeconds: 30
+    timeoutMs: 5000
+    threshold: 3
+
+proxy:
+  port: 3000
+  connectionPoolSize: 10
+  maxConnectionsPerServer: 5
+
+webUI:
+  enabled: true
+  port: 3001
+  apiKey: "${WEB_UI_API_KEY}"
+```
+
+### Example 3: Production Deployment
+
+```yaml
+servers:
+  api-gateway:
+    command: "mcp-api-gateway"
+    transport:
+      type: webSocket
+      url: "ws://api-gateway:8080/mcp"
+    restartOnFailure: true
+    maxRestarts: 5
+    restartDelayMs: 10000
+  
+  ml-models:
+    command: "mcp-ml-server"
+    transport:
+      type: httpSse
+      url: "http://ml-server:9000/sse"
+      headers:
+        Authorization: "Bearer ${ML_API_KEY}"
+    
+  vector-db:
+    command: "mcp-vector-server"
+    args: ["--collection", "production"]
+    transport:
+      type: stdio
+    env:
+      PINECONE_API_KEY: "${PINECONE_API_KEY}"
+      PINECONE_ENV: "production"
+
+healthChecks:
+  api-gateway:
+    enabled: true
+    intervalSeconds: 10
+    timeoutMs: 3000
+    threshold: 2
+    
+  ml-models:
+    enabled: true
+    intervalSeconds: 30
+    timeoutMs: 10000
+
+proxy:
+  port: 3000
+  host: "0.0.0.0"
+  connectionPoolSize: 50
+  requestTimeoutMs: 30000
+
+webUI:
+  enabled: true
+  port: 3001
+  host: "0.0.0.0"
+  apiKey: "${ADMIN_API_KEY}"
+
+logging:
+  level: "info"
+  format: "json"
+```
 
 ## Configuration
 
@@ -78,6 +239,16 @@ Each server configuration supports:
 - `maxRestarts`: Maximum number of restart attempts (default: 3)
 - `restartDelayMs`: Delay between restarts in milliseconds (default: 5000)
 
+### Logging System
+
+The proxy captures all server output to rotating log files:
+- **Location**: `~/.mcp-proxy/logs/{server-name}/server.log`
+- **Format**: `[timestamp] [STDOUT|STDERR] message`
+- **Rotation**: Automatic at 10MB, 2-day retention
+- **API Access**: 
+  - `GET /api/logs/{server}?lines=N&type=stdout|stderr`
+  - `GET /api/logs/{server}/stream` (Server-Sent Events)
+
 ### Web UI Configuration
 
 The web UI can be configured with:
@@ -94,13 +265,18 @@ The proxy server is built with:
 - **DashMap**: Lock-free concurrent hash maps
 - **Prometheus**: Metrics collection and export
 - **Serde**: Configuration serialization/deserialization
+- **Yew**: Rust/WASM framework for the web UI
 
 ## Development
 
 ### Building
 
 ```bash
+# Build without UI (faster for development)
 cargo build --release
+
+# Build with UI (requires trunk)
+BUILD_YEW_UI=1 cargo build --release
 ```
 
 ### Running Tests
@@ -118,8 +294,46 @@ src/
 ├── proxy/        # Core proxy logic and request routing
 ├── server/       # Server lifecycle management
 ├── state/        # Application state and metrics
+├── logging/      # File-based logging system
 ├── web/          # Web UI and REST API
 └── main.rs       # Application entry point
+
+yew-ui/           # Rust/WASM web UI
+├── src/
+│   ├── components/  # Yew components
+│   ├── api/        # API client and WebSocket handling
+│   └── types/      # Shared types
+└── style.css       # UI styles
+```
+
+## Monitoring and Debugging
+
+### Viewing Logs
+
+1. **Web UI**: Click "Logs" button for any server to view real-time logs
+2. **Files**: Check `~/.mcp-proxy/logs/{server-name}/server.log`
+3. **API**: `curl http://localhost:3001/api/logs/server-name?lines=50`
+4. **Stream**: `curl http://localhost:3001/api/logs/server-name/stream`
+
+### Metrics
+
+Prometheus metrics available at `/metrics`:
+- `mcp_proxy_requests_total`
+- `mcp_proxy_request_duration_seconds`
+- `mcp_proxy_active_connections`
+- `mcp_proxy_server_restarts_total`
+
+### Health Checks
+
+Configure health checks to monitor server availability:
+
+```yaml
+healthChecks:
+  critical-server:
+    enabled: true
+    intervalSeconds: 30
+    timeoutMs: 5000
+    threshold: 3  # Failures before marking unhealthy
 ```
 
 ## License
