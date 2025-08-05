@@ -86,14 +86,14 @@ webUI:
   port: 3001
 ```
 
-Then configure Claude Code to use the proxy:
+Then configure Claude Code to use the proxy via MCP remote server:
 
 ```json
 {
   "mcpServers": {
-    "proxy": {
-      "command": "node",
-      "args": ["/path/to/mcp-client-proxy.js", "http://localhost:3000"]
+    "rust-proxy": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-remote", "http://localhost:3000"]
     }
   }
 }
