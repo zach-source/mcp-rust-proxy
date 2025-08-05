@@ -22,8 +22,8 @@
           inherit system overlays;
         };
 
-        # Rust toolchain configuration
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+        # Rust toolchain configuration - use a recent stable version that supports lockfile v4
+        rustToolchain = pkgs.rust-bin.stable."1.81.0".default.override {
           extensions = [ "rust-src" "rust-analyzer" ];
           targets = [
             "wasm32-unknown-unknown"
