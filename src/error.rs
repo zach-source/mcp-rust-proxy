@@ -27,6 +27,9 @@ pub enum ProxyError {
     #[error("Invalid request: {0}")]
     InvalidRequest(String),
     
+    #[error("Invalid response")]
+    InvalidResponse,
+    
     #[error("Pool error: {0}")]
     Pool(#[from] PoolError),
 }

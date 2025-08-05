@@ -1,5 +1,11 @@
 use std::sync::Arc;
+use std::path::PathBuf;
 use warp::{Filter, Rejection, Reply};
+use tokio::fs::File;
+use tokio::io::{AsyncBufReadExt, BufReader, AsyncSeekExt};
+use tokio::time::{interval, Duration};
+use futures::stream::{Stream, StreamExt};
+use futures::stream;
 use crate::state::AppState;
 use crate::server::ServerManager;
 
@@ -9,6 +15,9 @@ pub fn routes(
     // Server endpoints
     let servers = servers_routes(state.clone());
     
+    // Log endpoints
+    let logs = logs_routes(state.clone());
+    
     // Metrics endpoint
     let metrics = metrics_route(state.clone());
     
@@ -16,7 +25,7 @@ pub fn routes(
     let config = config_routes(state);
     
     warp::path("api")
-        .and(servers.or(metrics).or(config))
+        .and(servers.or(logs).or(metrics).or(config))
 }
 
 fn servers_routes(
@@ -38,6 +47,24 @@ fn servers_routes(
         .and_then(server_status);
     
     list.or(action).or(status)
+}
+
+fn logs_routes(
+    state: Arc<AppState>
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    let logs_tail = warp::path!("logs" / String)
+        .and(warp::get())
+        .and(warp::query::<std::collections::HashMap<String, String>>())
+        .and(with_state(state.clone()))
+        .and_then(get_server_logs);
+    
+    let logs_stream = warp::path!("logs" / String / "stream")
+        .and(warp::get())
+        .and(warp::query::<std::collections::HashMap<String, String>>())
+        .and(with_state(state))
+        .and_then(stream_server_logs);
+    
+    logs_tail.or(logs_stream)
 }
 
 fn metrics_route(
@@ -73,23 +100,50 @@ fn with_state(
 }
 
 async fn list_servers(state: Arc<AppState>) -> Result<impl Reply, Rejection> {
-    let servers: Vec<_> = state.servers.iter()
-        .map(|entry| {
-            let name = entry.key().clone();
-            let info = entry.value();
-            let state = info.state.try_read()
-                .map(|s| format!("{:?}", *s))
-                .unwrap_or_else(|_| "Unknown".to_string());
-            
+    let mut servers = Vec::new();
+    
+    for entry in state.servers.iter() {
+        let name = entry.key().clone();
+        let info = entry.value();
+        
+        let server_state = info.state.read().await;
+        let state_str = match *server_state {
+            crate::state::ServerState::Starting => "starting",
+            crate::state::ServerState::Running => "running",
+            crate::state::ServerState::Stopping => "stopping",
+            crate::state::ServerState::Stopped => "stopped",
+            crate::state::ServerState::Failed => "failed",
+        }.to_string();
+        
+        let restart_count = *info.restart_count.read().await;
+        
+        let last_health_check = info.last_health_check.read().await;
+        let health_check_data = last_health_check.as_ref().map(|hc| {
             serde_json::json!({
-                "name": name,
-                "state": state,
-                "restart_count": info.restart_count.try_read()
-                    .map(|guard| *guard)
-                    .unwrap_or(0),
+                "timestamp": hc.timestamp.to_rfc3339(),
+                "success": hc.success,
+                "response_time_ms": hc.response_time_ms,
+                "error": hc.error
             })
-        })
-        .collect();
+        });
+        
+        let last_access_time = info.last_access_time.read().await;
+        let last_access = last_access_time.as_ref().map(|t| t.to_rfc3339());
+        
+        // Check if health checks are enabled for this server
+        let config = state.config.read().await;
+        let health_check_enabled = config.get_server_health_check(&name).is_some();
+        drop(config);
+        
+        servers.push(serde_json::json!({
+            "name": name,
+            "state": state_str,
+            "restart_count": restart_count,
+            "health_check_enabled": health_check_enabled,
+            "last_health_check": health_check_data,
+            "last_access_time": last_access
+        }));
+    }
     
     Ok(warp::reply::json(&serde_json::json!({
         "servers": servers
@@ -140,11 +194,32 @@ async fn server_status(
         let server_state = info.state.read().await;
         let restart_count = info.restart_count.read().await;
         
+        let last_health_check = info.last_health_check.read().await;
+        let health_check_data = last_health_check.as_ref().map(|hc| {
+            serde_json::json!({
+                "timestamp": hc.timestamp.to_rfc3339(),
+                "success": hc.success,
+                "response_time_ms": hc.response_time_ms,
+                "error": hc.error
+            })
+        });
+        
+        let last_access_time = info.last_access_time.read().await;
+        let last_access = last_access_time.as_ref().map(|t| t.to_rfc3339());
+        
+        // Check if health checks are enabled for this server
+        let config = state.config.read().await;
+        let health_check_enabled = config.get_server_health_check(&name).is_some();
+        drop(config);
+        
         Ok(warp::reply::with_status(
             warp::reply::json(&serde_json::json!({
                 "name": name,
                 "state": format!("{:?}", *server_state),
                 "restart_count": *restart_count,
+                "health_check_enabled": health_check_enabled,
+                "last_health_check": health_check_data,
+                "last_access_time": last_access
             })),
             warp::http::StatusCode::OK,
         ))
@@ -212,4 +287,244 @@ async fn update_config(
             warp::http::StatusCode::BAD_REQUEST,
         )),
     }
+}
+
+async fn get_server_logs(
+    server_name: String,
+    query_params: std::collections::HashMap<String, String>,
+    _state: Arc<AppState>,
+) -> Result<impl Reply, Rejection> {
+    // Get log directory path
+    let home = match dirs::home_dir() {
+        Some(dir) => dir,
+        None => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&serde_json::json!({
+                    "error": "Could not determine home directory"
+                })),
+                warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
+
+    let log_file_path = home
+        .join(".mcp-proxy")
+        .join("logs")
+        .join(&server_name)
+        .join("server.log");
+
+    // Check if log file exists
+    if !log_file_path.exists() {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&serde_json::json!({
+                "error": format!("Log file not found for server: {}", server_name)
+            })),
+            warp::http::StatusCode::NOT_FOUND,
+        ));
+    }
+
+    // Parse query parameters
+    let lines = query_params.get("lines")
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(100); // Default to last 100 lines
+    
+    let filter_type = query_params.get("type"); // Optional filter: "stdout", "stderr", or none for both
+
+    // Read the last N lines from the file
+    match read_last_lines(&log_file_path, lines, filter_type).await {
+        Ok(log_lines) => {
+            Ok(warp::reply::with_status(
+                warp::reply::json(&serde_json::json!({
+                    "server": server_name,
+                    "lines": log_lines,
+                    "file_path": log_file_path.to_string_lossy(),
+                    "filter": filter_type.map_or("all", |v| v.as_str())
+                })),
+                warp::http::StatusCode::OK,
+            ))
+        }
+        Err(e) => {
+            tracing::error!("Error reading log file {:?}: {}", log_file_path, e);
+            Ok(warp::reply::with_status(
+                warp::reply::json(&serde_json::json!({
+                    "error": format!("Failed to read log file: {}", e)
+                })),
+                warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        }
+    }
+}
+
+async fn read_last_lines(
+    file_path: &PathBuf, 
+    num_lines: usize, 
+    filter_type: Option<&String>
+) -> Result<Vec<String>, std::io::Error> {
+    let file = File::open(file_path).await?;
+    let mut reader = BufReader::new(file);
+    
+    // Get file size
+    let metadata = tokio::fs::metadata(file_path).await?;
+    let file_size = metadata.len();
+    
+    // If file is empty, return empty vec
+    if file_size == 0 {
+        return Ok(Vec::new());
+    }
+    
+    // For efficiency, we'll read from the end of the file
+    // This is a simple implementation - for very large files, 
+    // we might want to implement a more sophisticated approach
+    let mut all_lines = Vec::new();
+    let mut line = String::new();
+    
+    // Read all lines (for now - could optimize for very large files)
+    loop {
+        line.clear();
+        let bytes_read = reader.read_line(&mut line).await?;
+        if bytes_read == 0 {
+            break;
+        }
+        all_lines.push(line.trim_end().to_string());
+    }
+    
+    // Filter lines by type if specified
+    let filtered_lines: Vec<String> = if let Some(filter) = filter_type {
+        let filter_upper = filter.to_uppercase();
+        all_lines.into_iter()
+            .filter(|line| {
+                match filter_upper.as_str() {
+                    "STDOUT" => line.contains("[STDOUT]"),
+                    "STDERR" => line.contains("[STDERR]"),
+                    _ => true, // If invalid filter, return all lines
+                }
+            })
+            .collect()
+    } else {
+        all_lines
+    };
+    
+    // Return the last N lines
+    let start_index = if filtered_lines.len() > num_lines {
+        filtered_lines.len() - num_lines
+    } else {
+        0
+    };
+    
+    Ok(filtered_lines[start_index..].to_vec())
+}
+
+async fn stream_server_logs(
+    server_name: String,
+    query_params: std::collections::HashMap<String, String>,
+    _state: Arc<AppState>,
+) -> Result<impl Reply, Rejection> {
+    // Get log directory path
+    let home = match dirs::home_dir() {
+        Some(dir) => dir,
+        None => {
+            return Err(warp::reject::custom(LogStreamError::HomeDirectoryNotFound));
+        }
+    };
+
+    let log_file_path = home
+        .join(".mcp-proxy")
+        .join("logs")
+        .join(&server_name)
+        .join("server.log");
+
+    // Check if log file exists
+    if !log_file_path.exists() {
+        return Err(warp::reject::custom(LogStreamError::LogFileNotFound(server_name)));
+    }
+
+    let filter_type = query_params.get("type").cloned(); // Optional filter: "stdout", "stderr", or none for both
+
+    // Create the log stream
+    let log_stream = create_log_stream(log_file_path, filter_type);
+    
+    // Convert to SSE format
+    let sse_stream = log_stream.map(|line| {
+        Ok::<_, warp::Error>(warp::sse::Event::default().data(line))
+    });
+
+    let reply = warp::sse::reply(sse_stream);
+    Ok(warp::reply::with_header(
+        reply,
+        "Cache-Control",
+        "no-cache",
+    ))
+}
+
+#[derive(Debug)]
+enum LogStreamError {
+    HomeDirectoryNotFound,
+    LogFileNotFound(String),
+}
+
+impl warp::reject::Reject for LogStreamError {}
+
+fn create_log_stream(
+    log_file_path: PathBuf,
+    filter_type: Option<String>,
+) -> impl Stream<Item = String> {
+    stream::unfold(
+        (log_file_path, filter_type, 0u64),
+        move |(path, filter, mut last_position)| async move {
+            let mut ticker = interval(Duration::from_millis(500)); // Check every 500ms
+            
+            loop {
+                ticker.tick().await;
+                
+                match File::open(&path).await {
+                    Ok(mut file) => {
+                        // Seek to the last known position
+                        if file.seek(std::io::SeekFrom::Start(last_position)).await.is_err() {
+                            continue;
+                        }
+                        
+                        let mut reader = BufReader::new(file);
+                        let mut line = String::new();
+                        let mut new_lines = Vec::new();
+                        
+                        // Read new lines from the current position
+                        while let Ok(bytes_read) = reader.read_line(&mut line).await {
+                            if bytes_read == 0 {
+                                break; // EOF
+                            }
+                            
+                            let trimmed_line = line.trim_end().to_string();
+                            
+                            // Apply filter if specified
+                            let should_include = if let Some(ref filter) = filter {
+                                match filter.to_uppercase().as_str() {
+                                    "STDOUT" => trimmed_line.contains("[STDOUT]"),
+                                    "STDERR" => trimmed_line.contains("[STDERR]"),
+                                    _ => true,
+                                }
+                            } else {
+                                true
+                            };
+                            
+                            if should_include {
+                                new_lines.push(trimmed_line);
+                            }
+                            
+                            last_position += bytes_read as u64;
+                            line.clear();
+                        }
+                        
+                        if !new_lines.is_empty() {
+                            let combined_lines = new_lines.join("\n");
+                            return Some((combined_lines, (path, filter, last_position)));
+                        }
+                    }
+                    Err(_) => {
+                        // File might not exist or be accessible, continue waiting
+                        continue;
+                    }
+                }
+            }
+        },
+    )
 }

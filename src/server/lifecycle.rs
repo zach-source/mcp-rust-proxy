@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::error::Result;
 use crate::state::{AppState, ServerInfo, ServerState};
+use crate::logging::ServerLogger;
 use super::ManagedServer;
 
 pub struct ServerManager {
@@ -34,22 +35,27 @@ impl ServerManager {
         let config = self.state.config.read().await;
         
         for (name, server_config) in &config.servers {
+            // Create and register server info BEFORE creating ManagedServer
+            let mut info = ServerInfo::new(name.clone());
+            
+            // Create logger for this server
+            match ServerLogger::new(name.clone(), None).await {
+                Ok(logger) => {
+                    tracing::info!("Created logger for server: {}", name);
+                    info.set_logger(Arc::new(logger)).await;
+                }
+                Err(e) => {
+                    tracing::error!("Failed to create logger for server {}: {}", name, e);
+                }
+            }
+            
+            self.state.register_server(name.clone(), info).await;
+            
             let server = ManagedServer::new(
                 name.clone(),
                 server_config.clone(),
                 self.state.clone(),
             ).await?;
-            
-            // Create server info
-            let info = ServerInfo {
-                name: name.clone(),
-                state: Arc::new(RwLock::new(ServerState::Stopped)),
-                process_handle: None,
-                restart_count: Arc::new(RwLock::new(0)),
-            };
-            
-            // Register server
-            self.state.register_server(name.clone(), info).await;
             
             // Start server in background task
             let state = self.state.clone();
@@ -61,8 +67,9 @@ impl ServerManager {
                     tracing::error!("Failed to start server {}: {}", name, e);
                     let _ = state.set_server_state(&name, ServerState::Failed).await;
                 } else {
-                    // Start health checker if enabled
-                    if state.config.read().await.health_check.enabled {
+                    // Start health checker if enabled for this server
+                    let config = state.config.read().await;
+                    if config.get_server_health_check(&name).is_some() {
                         let health_checker = super::HealthChecker::new(
                             name.clone(),
                             state.clone(),

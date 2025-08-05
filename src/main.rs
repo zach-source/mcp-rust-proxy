@@ -3,31 +3,40 @@ use tracing::{info, error};
 use clap::Parser;
 use std::path::PathBuf;
 
-mod config;
-mod error;
-mod transport;
-mod state;
-mod server;
-mod proxy;
-mod web;
-mod protocol;
-
-use error::Result;
-use state::AppState;
-use server::ServerManager;
-use proxy::ProxyServer;
+use mcp_rust_proxy::config;
+use mcp_rust_proxy::error::Result;
+use mcp_rust_proxy::state::AppState;
+use mcp_rust_proxy::server::ServerManager;
+use mcp_rust_proxy::proxy::ProxyServer;
+use mcp_rust_proxy::commands;
+use mcp_rust_proxy::web;
 
 #[derive(Parser, Debug)]
 #[command(name = "mcp-rust-proxy")]
 #[command(about = "A fast and efficient Model Context Protocol (MCP) proxy server", long_about = None)]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
+    
     /// Path to configuration file (YAML/JSON/TOML)
-    #[arg(short, long, value_name = "FILE")]
+    #[arg(short, long, value_name = "FILE", global = true)]
     config: Option<PathBuf>,
     
     /// Enable debug logging
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     debug: bool,
+}
+
+#[derive(Debug, clap::Subcommand)]
+enum Command {
+    /// Run the proxy server (default)
+    Run,
+    /// Check configuration and test server connections
+    Check {
+        /// Test ping support for all servers
+        #[arg(long)]
+        ping: bool,
+    },
 }
 
 #[tokio::main]
@@ -44,9 +53,7 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    info!("Starting MCP Rust Proxy Server");
-
-    // Load configuration
+    // Load configuration first
     let config = match args.config {
         Some(path) => {
             info!("Loading configuration from: {}", path.display());
@@ -76,10 +83,21 @@ async fn main() -> Result<()> {
         }
     };
 
-    info!("Loaded {} server configurations", config.servers.len());
-    info!("Proxy will listen on {}:{}", config.proxy.host, config.proxy.port);
-    if config.web_ui.enabled {
-        info!("Web UI will be available on {}:{}", config.web_ui.host, config.web_ui.port);
+    // Handle commands
+    match args.command.unwrap_or(Command::Run) {
+        Command::Check { ping } => {
+            // Run config check
+            return commands::run_config_check(config, ping).await;
+        }
+        Command::Run => {
+            // Continue with normal server startup
+            info!("Starting MCP Rust Proxy Server");
+            info!("Loaded {} server configurations", config.servers.len());
+            info!("Proxy will listen on {}:{}", config.proxy.host, config.proxy.port);
+            if config.web_ui.enabled {
+                info!("Web UI will be available on {}:{}", config.web_ui.host, config.web_ui.port);
+            }
+        }
     }
 
     // Initialize application state

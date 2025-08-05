@@ -1,18 +1,21 @@
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncBufReadExt, BufReader};
+use tokio::process::{Child, ChildStdin, ChildStdout, ChildStderr, Command};
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::error::{TransportError, Result};
+use crate::state::{ServerInfo, LogEntry};
 use super::{Connection, Transport, TransportType};
+use chrono::Utc;
 
 pub struct StdioTransport {
     command: String,
     args: Vec<String>,
     env: std::collections::HashMap<String, String>,
     working_dir: Option<std::path::PathBuf>,
+    server_info: Option<Arc<ServerInfo>>,
 }
 
 impl StdioTransport {
@@ -22,6 +25,7 @@ impl StdioTransport {
             args: Vec::new(),
             env: std::collections::HashMap::new(),
             working_dir: None,
+            server_info: None,
         }
     }
 
@@ -38,6 +42,11 @@ impl StdioTransport {
 
     pub fn with_working_dir(mut self, dir: std::path::PathBuf) -> Self {
         self.working_dir = Some(dir);
+        self
+    }
+
+    pub fn with_server_info(mut self, server_info: Arc<ServerInfo>) -> Self {
+        self.server_info = Some(server_info);
         self
     }
 }
@@ -68,12 +77,46 @@ impl Transport for StdioTransport {
             .ok_or_else(|| TransportError::ConnectionFailed("Failed to get stdin".into()))?;
         let stdout = child.stdout.take()
             .ok_or_else(|| TransportError::ConnectionFailed("Failed to get stdout".into()))?;
+        let stderr = child.stderr.take()
+            .ok_or_else(|| TransportError::ConnectionFailed("Failed to get stderr".into()))?;
+
+        // Start stderr reader if we have server info
+        if let Some(ref server_info) = self.server_info {
+            tracing::debug!("Starting stderr reader for server: {}", server_info.name);
+            let server_info_clone = Arc::clone(server_info);
+            tokio::spawn(async move {
+                tracing::debug!("Stderr reader task started");
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    tracing::debug!("Captured stderr from process: {}", line);
+                    
+                    // Write to log file if logger is available
+                    if let Some(ref logger) = server_info_clone.logger {
+                        if let Err(e) = logger.write_stderr(&line).await {
+                            tracing::error!("Failed to write stderr to log file: {}", e);
+                        }
+                    }
+                    
+                    let log_entry = LogEntry {
+                        timestamp: Utc::now(),
+                        level: "error".to_string(),
+                        message: line.clone(),
+                    };
+                    server_info_clone.broadcast_log(log_entry);
+                }
+                tracing::debug!("Stderr reader task ended");
+            });
+        } else {
+            tracing::warn!("No server info provided, stderr will not be captured");
+        }
 
         Ok(Arc::new(StdioConnection {
             child: Arc::new(Mutex::new(child)),
             stdin: Arc::new(Mutex::new(stdin)),
             stdout: Arc::new(Mutex::new(stdout)),
             closed: Arc::new(AtomicBool::new(false)),
+            server_info: self.server_info.clone(),
         }))
     }
 
@@ -87,6 +130,7 @@ pub struct StdioConnection {
     stdin: Arc<Mutex<ChildStdin>>,
     stdout: Arc<Mutex<ChildStdout>>,
     closed: Arc<AtomicBool>,
+    server_info: Option<Arc<ServerInfo>>,
 }
 
 #[async_trait]
@@ -133,7 +177,28 @@ impl Connection for StdioConnection {
             if let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                 let message = buffer.split_to(pos + 1);
                 let msg_bytes = message.freeze();
-                tracing::trace!("Received from stdio: {}", std::str::from_utf8(&msg_bytes).unwrap_or("<binary>"));
+                let msg_str = std::str::from_utf8(&msg_bytes).unwrap_or("<binary>");
+                tracing::trace!("Received from stdio: {}", msg_str);
+                
+                // Write to stdout log file if logger is available
+                if let Some(ref server_info) = self.server_info {
+                    if let Some(ref logger) = server_info.logger {
+                        if let Err(e) = logger.write_stdout(msg_str.trim_end()).await {
+                            tracing::error!("Failed to write stdout to log file: {}", e);
+                        }
+                    }
+                    
+                    // Also broadcast non-JSON messages as logs
+                    if !msg_str.trim_start().starts_with('{') {
+                        let log_entry = LogEntry {
+                            timestamp: Utc::now(),
+                            level: "info".to_string(),
+                            message: msg_str.trim().to_string(),
+                        };
+                        server_info.broadcast_log(log_entry);
+                    }
+                }
+                
                 return Ok(msg_bytes);
             }
 

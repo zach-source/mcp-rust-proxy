@@ -4,10 +4,15 @@ use tokio::sync::RwLock;
 use crate::config::Config;
 use crate::transport::pool::ConnectionPool;
 use crate::error::Result;
+use crate::logging::ServerLogger;
+use chrono::{DateTime, Utc};
 
 pub mod metrics;
 
 pub use metrics::Metrics;
+
+#[cfg(test)]
+mod server_state_tests;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerState {
@@ -32,6 +37,25 @@ pub struct ServerInfo {
     pub state: Arc<RwLock<ServerState>>,
     pub process_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     pub restart_count: Arc<RwLock<u32>>,
+    pub last_health_check: Arc<RwLock<Option<HealthCheckStatus>>>,
+    pub last_access_time: Arc<RwLock<Option<DateTime<Utc>>>>,
+    pub log_subscribers: Arc<DashMap<String, tokio::sync::mpsc::UnboundedSender<LogEntry>>>,
+    pub logger: Option<Arc<ServerLogger>>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct LogEntry {
+    pub timestamp: DateTime<Utc>,
+    pub level: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct HealthCheckStatus {
+    pub timestamp: DateTime<Utc>,
+    pub success: bool,
+    pub response_time_ms: Option<u64>,
+    pub error: Option<String>,
 }
 
 impl AppState {
@@ -118,5 +142,50 @@ impl AppState {
 
     pub fn is_shutting_down(&self) -> bool {
         self.shutdown_tx.receiver_count() == 0
+    }
+    
+    pub async fn broadcast_update(&self) {
+        // This is a placeholder for WebSocket broadcasting
+        // In a real implementation, this would notify all connected WebSocket clients
+        tracing::debug!("Broadcasting server state update");
+    }
+}
+
+impl ServerInfo {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            state: Arc::new(RwLock::new(ServerState::Stopped)),
+            process_handle: None,
+            restart_count: Arc::new(RwLock::new(0)),
+            last_health_check: Arc::new(RwLock::new(None)),
+            last_access_time: Arc::new(RwLock::new(None)),
+            log_subscribers: Arc::new(DashMap::new()),
+            logger: None,
+        }
+    }
+
+    pub async fn set_logger(&mut self, logger: Arc<ServerLogger>) {
+        self.logger = Some(logger);
+    }
+
+    pub fn broadcast_log(&self, log_entry: LogEntry) {
+        // Send to all subscribers
+        let subscriber_count = self.log_subscribers.len();
+        tracing::debug!("Broadcasting log to {} subscribers: {}", subscriber_count, log_entry.message);
+        
+        self.log_subscribers.retain(|_id, sender| {
+            sender.send(log_entry.clone()).is_ok()
+        });
+    }
+
+    pub fn subscribe_logs(&self, subscriber_id: String) -> tokio::sync::mpsc::UnboundedReceiver<LogEntry> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        self.log_subscribers.insert(subscriber_id, tx);
+        rx
+    }
+
+    pub fn unsubscribe_logs(&self, subscriber_id: &str) {
+        self.log_subscribers.remove(subscriber_id);
     }
 }
