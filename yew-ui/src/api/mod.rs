@@ -1,5 +1,5 @@
-pub mod websocket;
 pub mod log_stream;
+pub mod websocket;
 
 use crate::types::{ApiResponse, MetricsResponse, ServersResponse};
 use gloo_net::http::Request;
@@ -26,10 +26,28 @@ pub async fn server_action(
     server_name: &str,
     action: &str,
 ) -> Result<ApiResponse, gloo_net::Error> {
-    Request::post(&format!("{}/servers/{}/{}", API_BASE, server_name, action))
+    let url = format!("{}/servers/{}/{}", API_BASE, server_name, action);
+    web_sys::console::log_1(&format!("Sending POST request to: {}", url).into());
+
+    let response = Request::post(&url)
         .header("Content-Type", "application/json")
         .send()
-        .await?
-        .json()
-        .await
+        .await?;
+
+    let status = response.status();
+    web_sys::console::log_1(&format!("Response status: {}", status).into());
+
+    response.json().await
+}
+
+pub async fn toggle_server_disable(server_name: &str) -> Result<ApiResponse, gloo_net::Error> {
+    let url = format!("{}/servers/{}/toggle-disable", API_BASE, server_name);
+    web_sys::console::log_1(&format!("Toggling disable state for: {}", server_name).into());
+
+    let response = Request::post(&url)
+        .header("Content-Type", "application/json")
+        .send()
+        .await?;
+
+    response.json().await
 }
