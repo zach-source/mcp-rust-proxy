@@ -1,0 +1,17 @@
+# MCP Proxy Configuration with No Servers (for UI demo)
+servers: {}
+
+proxy:
+  port: 3000
+  host: "127.0.0.1"
+  connectionPoolSize: 10
+  requestTimeoutMs: 5000
+  maxConcurrentRequests: 100
+
+webUi:
+  enabled: true
+  port: 8081
+  host: "127.0.0.1"
+
+healthCheck:
+  enabled: false

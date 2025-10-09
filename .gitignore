@@ -5,3 +5,20 @@
 
 # Yew UI build output
 /yew-dist
+
+# Node modules
+node_modules/
+**/node_modules/
+
+# Build outputs
+mcp-proxy-bundle/
+tauri-app/mcp-proxy-bundle/
+dist/
+**/dist/
+
+# Development environment
+.devenv/
+.direnv/
+
+# macOS
+.DS_Store

@@ -1,0 +1,37 @@
+# MCP Proxy Configuration with Web UI enabled
+servers:
+  test-echo:
+    command: "echo"
+    args: ["MCP Test Server"]
+    transport:
+      type: stdio
+    healthCheck:
+      enabled: true
+      intervalSeconds: 10
+
+  test-python:
+    command: "python"
+    args: ["-c", "import time; print('Python MCP Server'); time.sleep(3600)"]
+    transport:
+      type: stdio
+    healthCheck:
+      enabled: false
+
+proxy:
+  port: 3000
+  host: "127.0.0.1"
+  connectionPoolSize: 10
+  requestTimeoutMs: 5000
+  maxConcurrentRequests: 100
+
+webUi:
+  enabled: true
+  port: 8081
+  host: "127.0.0.1"
+
+healthCheck:
+  enabled: true
+  intervalSeconds: 30
+  timeoutSeconds: 5
+  maxAttempts: 3
+  retryIntervalSeconds: 2

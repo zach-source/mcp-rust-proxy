@@ -1,92 +1,78 @@
-# MCP Rust Proxy Server
+# MCP Rust Proxy
 
-A fast and efficient Model Context Protocol (MCP) proxy server written in Rust. This proxy aggregates multiple MCP servers and provides a unified interface, with built-in monitoring, health checks, and a web UI for management.
+A high-performance Model Context Protocol (MCP) proxy server built in Rust with a Tauri desktop application.
 
-**New**: The project now includes a modern Yew-based web UI alongside the original HTML/JS UI. See [Yew UI Integration](YEW_UI_INTEGRATION.md) for details.
+## Project Structure
+
+This project uses a Rust workspace with multiple crates for better modularity:
+
+```
+├── crates/
+│   ├── mcp-proxy-core/        # Core business logic (protocol, transport, config)
+│   ├── mcp-proxy-server/      # Server implementation (proxy, web API, state)
+│   ├── mcp-proxy-shared/      # Shared types between frontend and backend
+│   └── mcp-proxy-cli/         # Command-line interface
+├── tauri-app/                 # Tauri desktop application
+│   ├── src/                   # Frontend (TypeScript/React)
+│   └── src-tauri/            # Tauri backend (Rust)
+├── docs/                      # Documentation
+└── configs/examples/          # Example configuration files
+```
 
 ## Features
 
+- **High Performance**: Built with Rust for maximum performance and reliability
 - **Multi-Server Proxy**: Aggregate multiple MCP servers into a single endpoint
-- **Multiple Transports**: Support for stdio, HTTP/SSE, and WebSocket transports
-- **File-based Logging**: All server output captured to rotating log files with real-time streaming
-- **Configuration Management**: YAML/JSON configuration with environment variable substitution
-- **Server Lifecycle Management**: Start, stop, and restart individual servers
-- **Health Monitoring**: Automatic health checks with configurable intervals
-- **Web UI Dashboard**: Real-time server status monitoring and control
-- **Metrics Collection**: Prometheus-compatible metrics for monitoring
+- **Multiple Transports**: Support for stdio, HTTP-SSE, and WebSocket
 - **Connection Pooling**: Efficient connection management with automatic reconnection
+- **Health Monitoring**: Automatic health checks with configurable intervals
+- **Desktop Application**: Native desktop app built with Tauri
+- **Web UI**: Alternative web interface for browser access
+- **File-based Logging**: Comprehensive logging with rotation
+- **Server Management**: Start, stop, restart, and disable servers
+- **Real-time Updates**: Live server status and log streaming
 - **Graceful Shutdown**: Clean shutdown of all servers and connections
 
 ## Quick Start
 
-1. Create a configuration file `mcp-proxy.yaml`:
+### Prerequisites
 
-```yaml
-servers:
-  example-server:
-    command: "mcp-server-example"
-    args: ["--port", "8080"]
-    transport:
-      type: stdio
-    restartOnFailure: true
+- Rust 1.70+ (install from [rustup.rs](https://rustup.rs))
+- Node.js 18+ (for Tauri frontend)
+- pnpm (install with `npm install -g pnpm`)
 
-proxy:
-  port: 3000
-  host: "0.0.0.0"
-
-webUI:
-  enabled: true
-  port: 3001
-```
-
-2. Run the proxy server:
+### Building
 
 ```bash
-cargo run -- --config mcp-proxy.yaml
+# Build all crates
+cargo build --release
+
+# Build with Tauri UI
+cd tauri-app
+pnpm install
+pnpm tauri build
 ```
 
-3. Access the web UI at `http://localhost:3001`
+### Running
+
+#### CLI Mode
+```bash
+# Run with configuration file
+cargo run --bin mcp-proxy -- --config configs/examples/basic.yaml
+
+# Run with debug logging
+cargo run --bin mcp-proxy -- --debug --config configs/examples/basic.yaml
+```
+
+#### Desktop Application
+```bash
+cd tauri-app
+pnpm tauri dev
+```
 
 ## Using with Claude Code
 
-MCP Rust Proxy works seamlessly with Claude Code to manage multiple MCP servers. Here are some example configurations:
-
-### Example 1: Multiple Tool Servers
-
-```yaml
-servers:
-  filesystem-server:
-    command: "npx"
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/username/projects"]
-    transport:
-      type: stdio
-    env:
-      NODE_OPTIONS: "--max-old-space-size=4096"
-  
-  github-server:
-    command: "npx"
-    args: ["-y", "@modelcontextprotocol/server-github"]
-    transport:
-      type: stdio
-    env:
-      GITHUB_TOKEN: "${GITHUB_TOKEN}"
-  
-  postgres-server:
-    command: "npx"
-    args: ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
-    transport:
-      type: stdio
-
-proxy:
-  port: 3000
-  host: "127.0.0.1"
-
-webUI:
-  enabled: true
-  port: 3001
-```
-
-Then configure Claude Code to use the proxy via MCP remote server:
+MCP Rust Proxy works seamlessly with Claude Code to manage multiple MCP servers. Configure Claude Code to use the proxy via MCP remote server:
 
 ```json
 {
@@ -99,145 +85,84 @@ Then configure Claude Code to use the proxy via MCP remote server:
 }
 ```
 
-### Example 2: Development Environment
-
-```yaml
-servers:
-  # Code intelligence server
-  code-intel:
-    command: "rust-analyzer"
-    args: ["--stdio"]
-    transport:
-      type: stdio
-    
-  # Database tools
-  db-tools:
-    command: "npx"
-    args: ["-y", "@modelcontextprotocol/server-sqlite", "./dev.db"]
-    transport:
-      type: stdio
-  
-  # Custom project server
-  project-server:
-    command: "python"
-    args: ["./scripts/mcp_server.py"]
-    transport:
-      type: stdio
-    env:
-      PROJECT_ROOT: "${PWD}"
-      DEBUG: "true"
-
-# Health checks for critical servers
-healthChecks:
-  code-intel:
-    enabled: true
-    intervalSeconds: 30
-    timeoutMs: 5000
-    threshold: 3
-
-proxy:
-  port: 3000
-  connectionPoolSize: 10
-  maxConnectionsPerServer: 5
-
-webUI:
-  enabled: true
-  port: 3001
-  apiKey: "${WEB_UI_API_KEY}"
-```
-
-### Example 3: Production Deployment
-
-```yaml
-servers:
-  api-gateway:
-    command: "mcp-api-gateway"
-    transport:
-      type: webSocket
-      url: "ws://api-gateway:8080/mcp"
-    restartOnFailure: true
-    maxRestarts: 5
-    restartDelayMs: 10000
-  
-  ml-models:
-    command: "mcp-ml-server"
-    transport:
-      type: httpSse
-      url: "http://ml-server:9000/sse"
-      headers:
-        Authorization: "Bearer ${ML_API_KEY}"
-    
-  vector-db:
-    command: "mcp-vector-server"
-    args: ["--collection", "production"]
-    transport:
-      type: stdio
-    env:
-      PINECONE_API_KEY: "${PINECONE_API_KEY}"
-      PINECONE_ENV: "production"
-
-healthChecks:
-  api-gateway:
-    enabled: true
-    intervalSeconds: 10
-    timeoutMs: 3000
-    threshold: 2
-    
-  ml-models:
-    enabled: true
-    intervalSeconds: 30
-    timeoutMs: 10000
-
-proxy:
-  port: 3000
-  host: "0.0.0.0"
-  connectionPoolSize: 50
-  requestTimeoutMs: 30000
-
-webUI:
-  enabled: true
-  port: 3001
-  host: "0.0.0.0"
-  apiKey: "${ADMIN_API_KEY}"
-
-logging:
-  level: "info"
-  format: "json"
-```
-
 ## Configuration
 
-The proxy server can be configured using YAML or JSON files. Configuration files are searched in the following order:
-- `mcp-proxy.toml`
-- `mcp-proxy.json`
-- `mcp-proxy.yaml`
-- `mcp-proxy.yml`
-
-### Environment Variables
-
-All configuration values support environment variable substitution using the `${VAR}` syntax:
+Create a configuration file in YAML format:
 
 ```yaml
+proxy:
+  host: "0.0.0.0"
+  port: 3000
+  connectionPoolSize: 10
+
+webUI:
+  enabled: true
+  host: "0.0.0.0"
+  port: 3001
+
 servers:
-  api-server:
-    command: "api-server"
-    env:
-      API_KEY: "${API_KEY}"
+  filesystem-server:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"]
     transport:
-      type: httpSse
-      url: "${API_URL:-http://localhost:8080}/sse"
+      type: stdio
+    restartOnFailure: true
+    maxRestarts: 3
+    
+  github-server:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    transport:
+      type: stdio
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+    healthCheck:
+      enabled: true
+      intervalSeconds: 30
+      timeoutMs: 5000
 ```
 
-### Server Configuration
+See `configs/examples/` for more configuration examples.
 
-Each server configuration supports:
-- `command`: The executable to run
-- `args`: Command line arguments
-- `env`: Environment variables for the process
-- `transport`: Transport configuration (stdio, httpSse, webSocket)
-- `restartOnFailure`: Whether to restart on failure (default: true)
-- `maxRestarts`: Maximum number of restart attempts (default: 3)
-- `restartDelayMs`: Delay between restarts in milliseconds (default: 5000)
+## Development
+
+### Project Layout
+
+- **mcp-proxy-core**: Protocol handling, transport abstractions, configuration parsing
+- **mcp-proxy-server**: Server implementation, proxy logic, web API, state management
+- **mcp-proxy-shared**: Types shared between frontend and backend
+- **mcp-proxy-cli**: Command-line interface
+- **tauri-app**: Desktop application with native OS integration
+
+### Running Tests
+
+```bash
+# Run all tests
+cargo test --all
+
+# Run specific crate tests
+cargo test -p mcp-proxy-core
+cargo test -p mcp-proxy-server
+
+# Run with coverage
+cargo tarpaulin --all
+```
+
+### Building Documentation
+
+```bash
+# Build and open documentation
+cargo doc --all --open
+```
+
+## Architecture
+
+The MCP Proxy uses a modular architecture:
+
+1. **Core Layer**: Protocol definitions and transport abstractions
+2. **Server Layer**: Proxy implementation and state management
+3. **API Layer**: RESTful API and WebSocket connections
+4. **UI Layer**: Tauri desktop app or web interface
 
 ### Logging System
 
@@ -249,81 +174,7 @@ The proxy captures all server output to rotating log files:
   - `GET /api/logs/{server}?lines=N&type=stdout|stderr`
   - `GET /api/logs/{server}/stream` (Server-Sent Events)
 
-### Web UI Configuration
-
-The web UI can be configured with:
-- `enabled`: Whether to enable the web UI (default: true)
-- `port`: Port to listen on (default: 3001)
-- `host`: Host to bind to (default: "0.0.0.0")
-- `apiKey`: Optional API key for authentication
-
-## Architecture
-
-The proxy server is built with:
-- **Tokio**: Async runtime for high-performance I/O
-- **Warp**: Web framework for the proxy and web UI
-- **DashMap**: Lock-free concurrent hash maps
-- **Prometheus**: Metrics collection and export
-- **Serde**: Configuration serialization/deserialization
-- **Yew**: Rust/WASM framework for the web UI
-
-## Development
-
-### Building
-
-```bash
-# Build without UI (faster for development)
-cargo build --release
-
-# Build with UI (requires trunk)
-BUILD_YEW_UI=1 cargo build --release
-```
-
-### Running Tests
-
-```bash
-cargo test
-```
-
-### Project Structure
-
-```
-src/
-├── config/       # Configuration loading and validation
-├── transport/    # Transport implementations (stdio, HTTP/SSE, WebSocket)
-├── proxy/        # Core proxy logic and request routing
-├── server/       # Server lifecycle management
-├── state/        # Application state and metrics
-├── logging/      # File-based logging system
-├── web/          # Web UI and REST API
-└── main.rs       # Application entry point
-
-yew-ui/           # Rust/WASM web UI
-├── src/
-│   ├── components/  # Yew components
-│   ├── api/        # API client and WebSocket handling
-│   └── types/      # Shared types
-└── style.css       # UI styles
-```
-
-## Monitoring and Debugging
-
-### Viewing Logs
-
-1. **Web UI**: Click "Logs" button for any server to view real-time logs
-2. **Files**: Check `~/.mcp-proxy/logs/{server-name}/server.log`
-3. **API**: `curl http://localhost:3001/api/logs/server-name?lines=50`
-4. **Stream**: `curl http://localhost:3001/api/logs/server-name/stream`
-
-### Metrics
-
-Prometheus metrics available at `/metrics`:
-- `mcp_proxy_requests_total`
-- `mcp_proxy_request_duration_seconds`
-- `mcp_proxy_active_connections`
-- `mcp_proxy_server_restarts_total`
-
-### Health Checks
+### Health Monitoring
 
 Configure health checks to monitor server availability:
 
@@ -335,6 +186,28 @@ healthChecks:
     timeoutMs: 5000
     threshold: 3  # Failures before marking unhealthy
 ```
+
+### Metrics
+
+Prometheus-compatible metrics available at `/metrics`:
+- `mcp_proxy_requests_total`
+- `mcp_proxy_request_duration_seconds`
+- `mcp_proxy_active_connections`
+- `mcp_proxy_server_restarts_total`
+
+## Monitoring and Debugging
+
+### Viewing Logs
+
+1. **Desktop App**: View real-time logs in the UI
+2. **Web UI**: Click "Logs" button for any server
+3. **Files**: Check `~/.mcp-proxy/logs/{server-name}/server.log`
+4. **API**: `curl http://localhost:3001/api/logs/server-name?lines=50`
+5. **Stream**: `curl http://localhost:3001/api/logs/server-name/stream`
+
+## Contributing
+
+Contributions are welcome! Please read our contributing guidelines and submit pull requests to our repository.
 
 ## License
 

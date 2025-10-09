@@ -1,32 +1,31 @@
-[package]
-name = "mcp-rust-proxy"
-version = "0.1.0"
-edition = "2021"
-authors = ["MCP Rust Proxy Contributors"]
-description = "A fast and efficient Model Context Protocol (MCP) proxy server"
-license = "MIT"
-repository = "https://github.com/zach-source/mcp-rust-proxy"
-build = "build.rs"
+[workspace]
+members = [
+    "crates/mcp-proxy-core",
+    "crates/mcp-proxy-server", 
+    "crates/mcp-proxy-shared",
+    "crates/mcp-proxy-cli",
+    "tauri-app/src-tauri",
+    "yew-ui",
+]
+resolver = "2"
 
-[dependencies]
+[workspace.package]
+version = "0.1.0"
+authors = ["MCP Proxy Team"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/mcp-rust-proxy"
+
+[workspace.dependencies]
 # Async runtime
 tokio = { version = "1.40", features = ["full"] }
-tokio-util = { version = "0.7", features = ["codec", "compat"] }
-tokio-stream = "0.1"
-futures = "0.3"
-
-# Web framework
-warp = "0.3"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "fs"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-
-# Configuration
-figment = { version = "0.10", features = ["env", "toml", "json", "yaml"] }
+toml = "0.8"
 
 # Error handling
 thiserror = "1.0"
@@ -36,37 +35,41 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
-# Data structures
-dashmap = "6.0"
-arc-swap = "1.7"
-bytes = "1.7"
+# HTTP and WebSocket
+warp = "0.3"
+hyper = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.24"
+reqwest = { version = "0.12", features = ["json", "stream"] }
 
-# Connection pooling
-bb8 = "0.8"
-deadpool = "0.12"
+# State management
+dashmap = "6"
+arc-swap = "1.7"
 
 # Utilities
-uuid = { version = "1.10", features = ["v4", "serde"] }
+uuid = { version = "1.11", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-tracing-appender = "0.2"
-dirs = "5.0"
-num_cpus = "1.16"
+dirs = "5"
+futures = "0.3"
 async-trait = "0.1"
-regex = "1.10"
-clap = { version = "4.4", features = ["derive"] }
 
-# Process management
-nix = { version = "0.29", features = ["process", "signal"] }
-
-# HTTP/WebSocket clients
-reqwest = { version = "0.12", features = ["stream", "json"] }
-tokio-tungstenite = "0.24"
-
-# Metrics
-prometheus = "0.13"
-
-[dev-dependencies]
-criterion = { version = "0.5", features = ["async_tokio"] }
+# Testing
 mockall = "0.13"
-tempfile = "3.12"
-tokio-test = "0.4"
+tempfile = "3"
+pretty_assertions = "1"
+
+# Internal crates
+mcp-proxy-core = { path = "crates/mcp-proxy-core" }
+mcp-proxy-server = { path = "crates/mcp-proxy-server" }
+mcp-proxy-shared = { path = "crates/mcp-proxy-shared" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 2

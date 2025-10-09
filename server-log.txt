@@ -1,0 +1,104 @@
+warning: mcp-rust-proxy@0.1.0: Skipping Yew UI build in debug mode. Set BUILD_YEW_UI=1 to force build.
+   Compiling mcp-rust-proxy v0.1.0 (/Users/ztaylor/repos/zach-source/mcp-rust-proxy/feature-rust-mcp-proxy)
+warning: unused import: `ChildStderr`
+ --> src/transport/stdio.rs:4:54
+  |
+4 | use tokio::process::{Child, ChildStdin, ChildStdout, ChildStderr, Command};
+  |                                                      ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `tokio::sync::RwLock`
+ --> src/server/lifecycle.rs:2:5
+  |
+2 | use tokio::sync::RwLock;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `e`
+  --> src/transport/pool.rs:65:23
+   |
+65 |             .map_err(|e| crate::error::TransportError::InvalidFormat)?;
+   |                       ^ help: if this is intentional, prefix it with an underscore: `_e`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `name`
+  --> src/commands/check.rs:68:27
+   |
+68 | async fn test_server_ping(name: &str, config: &ServerConfig) -> Result<bool> {
+   |                           ^^^^ help: if this is intentional, prefix it with an underscore: `_name`
+
+warning: fields `headers` and `timeout_ms` are never read
+  --> src/transport/http_sse.rs:11:5
+   |
+9  | pub struct HttpSseTransport {
+   |            ---------------- fields in this struct
+10 |     url: String,
+11 |     headers: HashMap<String, String>,
+   |     ^^^^^^^
+12 |     timeout_ms: u64,
+   |     ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: fields `protocols` and `auto_reconnect` are never read
+  --> src/transport/websocket.rs:10:5
+   |
+8  | pub struct WebSocketTransport {
+   |            ------------------ fields in this struct
+9  |     url: String,
+10 |     protocols: Vec<String>,
+   |     ^^^^^^^^^
+11 |     auto_reconnect: bool,
+   |     ^^^^^^^^^^^^^^
+
+warning: field `url` is never read
+  --> src/transport/websocket.rs:41:5
+   |
+40 | pub struct WebSocketConnection {
+   |            ------------------- field in this struct
+41 |     url: String,
+   |     ^^^
+
+warning: field `kind` is never read
+   --> src/web/mod.rs:121:5
+    |
+120 | struct AuthError {
+    |        --------- field in this struct
+121 |     kind: AuthErrorKind,
+    |     ^^^^
+    |
+    = note: `AuthError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: struct `WsResponse` is never constructed
+  --> src/web/ws.rs:19:8
+   |
+19 | struct WsResponse {
+   |        ^^^^^^^^^^
+
+warning: `mcp-rust-proxy` (lib) generated 9 warnings (run `cargo fix --lib -p mcp-rust-proxy` to apply 2 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.10s
+     Running `target/debug/mcp-rust-proxy --config test-mock-logging.yaml`
+[2m2025-08-04T17:08:58.767654Z[0m [32m INFO[0m [2mmcp_rust_proxy[0m[2m:[0m Loading configuration from: test-mock-logging.yaml
+[2m2025-08-04T17:08:58.770954Z[0m [32m INFO[0m [2mmcp_rust_proxy[0m[2m:[0m Configuration loaded successfully from test-mock-logging.yaml
+[2m2025-08-04T17:08:58.770974Z[0m [32m INFO[0m [2mmcp_rust_proxy[0m[2m:[0m Starting MCP Rust Proxy Server
+[2m2025-08-04T17:08:58.770992Z[0m [32m INFO[0m [2mmcp_rust_proxy[0m[2m:[0m Loaded 1 server configurations
+[2m2025-08-04T17:08:58.771009Z[0m [32m INFO[0m [2mmcp_rust_proxy[0m[2m:[0m Proxy will listen on 127.0.0.1:3000
+[2m2025-08-04T17:08:58.771036Z[0m [32m INFO[0m [2mmcp_rust_proxy[0m[2m:[0m Web UI will be available on 127.0.0.1:3001
+[2m2025-08-04T17:08:58.771750Z[0m [32m INFO[0m [2mmcp_rust_proxy::server::lifecycle[0m[2m:[0m Server manager started
+[2m2025-08-04T17:08:58.771768Z[0m [32m INFO[0m [2mmcp_rust_proxy::proxy[0m[2m:[0m Starting proxy server
+[2m2025-08-04T17:08:58.771781Z[0m [32m INFO[0m [2mmcp_rust_proxy::proxy[0m[2m:[0m Proxy server listening on 127.0.0.1:3000
+[2m2025-08-04T17:08:58.771773Z[0m [32m INFO[0m [2mmcp_rust_proxy::web[0m[2m:[0m Starting web UI server on 127.0.0.1:3001
+[2m2025-08-04T17:08:58.772081Z[0m [32m INFO[0m [2mmcp_rust_proxy::web[0m[2m:[0m Using compiled Yew UI from yew-dist/
+[2m2025-08-04T17:08:58.772749Z[0m [32m INFO[0m [2mmcp_rust_proxy::server::lifecycle[0m[2m:[0m Created logger for server: mock-logger
+[2m2025-08-04T17:08:58.772836Z[0m [32m INFO[0m [2mmcp_rust_proxy::server[0m[2m:[0m Starting server: mock-logger
+[2m2025-08-04T17:08:58.823920Z[0m [32m INFO[0m [2mmcp_rust_proxy::transport::pool[0m[2m:[0m Successfully initialized MCP connection to mock-logger
+[2m2025-08-04T17:08:58.823953Z[0m [32m INFO[0m [2mmcp_rust_proxy::server[0m[2m:[0m Server mock-logger started successfully
+[2m2025-08-04T17:17:37.475890Z[0m [32m INFO[0m [2mmcp_rust_proxy[0m[2m:[0m Received terminate signal
+[2m2025-08-04T17:17:37.476100Z[0m [32m INFO[0m [2mmcp_rust_proxy[0m[2m:[0m Shutting down MCP Rust Proxy Server
+[2m2025-08-04T17:17:37.476115Z[0m [32m INFO[0m [2mmcp_rust_proxy::state[0m[2m:[0m Initiating application shutdown
+[2m2025-08-04T17:17:37.476200Z[0m [32m INFO[0m [2mmcp_rust_proxy::proxy[0m[2m:[0m Proxy server stopped
+[2m2025-08-04T17:17:37.476340Z[0m [32m INFO[0m [2mmcp_rust_proxy::web[0m[2m:[0m Web UI server stopped
+[2m2025-08-04T17:17:37.477169Z[0m [32m INFO[0m [2mmcp_rust_proxy::server::lifecycle[0m[2m:[0m Server mock-logger stopped
+[2m2025-08-04T17:17:37.477199Z[0m [32m INFO[0m [2mmcp_rust_proxy::server::lifecycle[0m[2m:[0m Server manager stopped
+[2m2025-08-04T17:17:37.477229Z[0m [32m INFO[0m [2mmcp_rust_proxy[0m[2m:[0m Graceful shutdown completed

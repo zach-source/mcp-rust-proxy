@@ -1,6 +1,6 @@
 use crate::types::LogData;
-use gloo_net::eventsource::EventSource;
 use wasm_bindgen::prelude::*;
+use web_sys::EventSource;
 use web_sys::MessageEvent;
 use yew::prelude::*;
 
@@ -17,16 +17,20 @@ impl LogStreamService {
         }
     }
 
-    pub fn start_streaming(&mut self, server_name: &str, callback: Callback<String>) -> Result<(), JsValue> {
+    pub fn start_streaming(
+        &mut self,
+        server_name: &str,
+        callback: Callback<String>,
+    ) -> Result<(), JsValue> {
         // Close existing stream if any
         self.stop_streaming();
 
         let url = format!("/api/logs/{}/stream", server_name);
-        
+
         match EventSource::new(&url) {
             Ok(event_source) => {
                 let callback_clone = callback.clone();
-                
+
                 let onmessage_callback = Closure::wrap(Box::new(move |e: MessageEvent| {
                     if let Ok(data) = e.data().dyn_into::<js_sys::JsString>() {
                         let message: String = data.into();
@@ -49,7 +53,10 @@ impl LogStreamService {
                 Ok(())
             }
             Err(e) => {
-                web_sys::console::error_1(&JsValue::from_str(&format!("Failed to create EventSource: {:?}", e)));
+                web_sys::console::error_1(&JsValue::from_str(&format!(
+                    "Failed to create EventSource: {:?}",
+                    e
+                )));
                 Err(e)
             }
         }
@@ -77,7 +84,7 @@ pub fn parse_log_line(line: &str) -> Option<LogData> {
             let timestamp = parts[0].trim_start_matches('[');
             let level = parts[1].trim_start_matches(" [").trim();
             let message = parts[2].trim_start_matches(' ');
-            
+
             return Some(LogData {
                 server: String::new(), // Will be set by the caller
                 timestamp: Some(timestamp.to_string()),
@@ -86,7 +93,7 @@ pub fn parse_log_line(line: &str) -> Option<LogData> {
             });
         }
     }
-    
+
     // Fallback: treat the whole line as message
     Some(LogData {
         server: String::new(),

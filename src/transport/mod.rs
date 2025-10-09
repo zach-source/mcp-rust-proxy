@@ -1,12 +1,12 @@
+use crate::error::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::sync::Arc;
-use crate::error::Result;
 
-pub mod stdio;
 pub mod http_sse;
-pub mod websocket;
 pub mod pool;
+pub mod stdio;
+pub mod websocket;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TransportType {
@@ -37,10 +37,8 @@ pub fn create_transport(
     match config {
         crate::config::TransportConfig::Stdio => {
             let mut transport = stdio::StdioTransport::new();
-            transport = transport.with_command(
-                server_config.command.clone(),
-                server_config.args.clone(),
-            );
+            transport =
+                transport.with_command(server_config.command.clone(), server_config.args.clone());
             if !server_config.env.is_empty() {
                 transport = transport.with_env(server_config.env.clone());
             }
@@ -48,26 +46,33 @@ pub fn create_transport(
                 transport = transport.with_working_dir(working_dir.clone());
             }
             if let Some(server_info) = server_info {
-                tracing::debug!("Adding server_info to transport for server: {}", server_info.name);
+                tracing::debug!(
+                    "Adding server_info to transport for server: {}",
+                    server_info.name
+                );
                 transport = transport.with_server_info(server_info);
             } else {
                 tracing::warn!("No server_info provided when creating stdio transport");
             }
             Ok(Arc::new(transport))
         }
-        crate::config::TransportConfig::HttpSse { url, headers, timeout_ms } => {
-            Ok(Arc::new(http_sse::HttpSseTransport::new(
-                url.clone(),
-                headers.clone(),
-                *timeout_ms,
-            )))
-        }
-        crate::config::TransportConfig::WebSocket { url, protocols, auto_reconnect } => {
-            Ok(Arc::new(websocket::WebSocketTransport::new(
-                url.clone(),
-                protocols.clone(),
-                *auto_reconnect,
-            )))
-        }
+        crate::config::TransportConfig::HttpSse {
+            url,
+            headers,
+            timeout_ms,
+        } => Ok(Arc::new(http_sse::HttpSseTransport::new(
+            url.clone(),
+            headers.clone(),
+            *timeout_ms,
+        ))),
+        crate::config::TransportConfig::WebSocket {
+            url,
+            protocols,
+            auto_reconnect,
+        } => Ok(Arc::new(websocket::WebSocketTransport::new(
+            url.clone(),
+            protocols.clone(),
+            *auto_reconnect,
+        ))),
     }
 }

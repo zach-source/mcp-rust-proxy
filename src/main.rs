@@ -1,14 +1,14 @@
-use tokio::signal;
-use tracing::{info, error};
 use clap::Parser;
 use std::path::PathBuf;
+use tokio::signal;
+use tracing::{error, info};
 
+use mcp_rust_proxy::commands;
 use mcp_rust_proxy::config;
 use mcp_rust_proxy::error::Result;
-use mcp_rust_proxy::state::AppState;
-use mcp_rust_proxy::server::ServerManager;
 use mcp_rust_proxy::proxy::ProxyServer;
-use mcp_rust_proxy::commands;
+use mcp_rust_proxy::server::ServerManager;
+use mcp_rust_proxy::state::AppState;
 use mcp_rust_proxy::web;
 
 #[derive(Parser, Debug)]
@@ -17,11 +17,11 @@ use mcp_rust_proxy::web;
 struct Args {
     #[command(subcommand)]
     command: Option<Command>,
-    
+
     /// Path to configuration file (YAML/JSON/TOML)
     #[arg(short, long, value_name = "FILE", global = true)]
     config: Option<PathBuf>,
-    
+
     /// Enable debug logging
     #[arg(short, long, global = true)]
     debug: bool,
@@ -43,13 +43,13 @@ enum Command {
 async fn main() -> Result<()> {
     // Parse command-line arguments
     let args = Args::parse();
-    
+
     // Initialize tracing
     let log_level = if args.debug { "debug" } else { "info" };
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(format!("mcp_rust_proxy={}", log_level).parse().unwrap())
+                .add_directive(format!("mcp_rust_proxy={}", log_level).parse().unwrap()),
         )
         .init();
 
@@ -63,7 +63,11 @@ async fn main() -> Result<()> {
                     cfg
                 }
                 Err(e) => {
-                    error!("Failed to load configuration from {}: {}", path.display(), e);
+                    error!(
+                        "Failed to load configuration from {}: {}",
+                        path.display(),
+                        e
+                    );
                     return Err(e);
                 }
             }
@@ -93,15 +97,26 @@ async fn main() -> Result<()> {
             // Continue with normal server startup
             info!("Starting MCP Rust Proxy Server");
             info!("Loaded {} server configurations", config.servers.len());
-            info!("Proxy will listen on {}:{}", config.proxy.host, config.proxy.port);
+            info!(
+                "Proxy will listen on {}:{}",
+                config.proxy.host, config.proxy.port
+            );
             if config.web_ui.enabled {
-                info!("Web UI will be available on {}:{}", config.web_ui.host, config.web_ui.port);
+                info!(
+                    "Web UI will be available on {}:{}",
+                    config.web_ui.host, config.web_ui.port
+                );
             }
         }
     }
 
     // Initialize application state
     let (state, shutdown_rx) = AppState::new(config);
+
+    // Load disabled servers state
+    if let Err(e) = state.load_disabled_servers().await {
+        error!("Failed to load disabled servers state: {}", e);
+    }
 
     // Start server manager
     let server_manager = ServerManager::new(state.clone(), shutdown_rx.resubscribe());
@@ -137,20 +152,18 @@ async fn main() -> Result<()> {
     info!("Shutting down MCP Rust Proxy Server");
 
     // Graceful shutdown with timeout
-    let shutdown_timeout = tokio::time::timeout(
-        tokio::time::Duration::from_secs(30),
-        async {
-            // Signal shutdown to all components
-            state.shutdown().await;
+    let shutdown_timeout = tokio::time::timeout(tokio::time::Duration::from_secs(30), async {
+        // Signal shutdown to all components
+        state.shutdown().await;
 
-            // Wait for tasks to complete
-            if let Some(web_handle) = web_handle {
-                let _ = tokio::join!(manager_handle, proxy_handle, web_handle);
-            } else {
-                let _ = tokio::join!(manager_handle, proxy_handle);
-            }
+        // Wait for tasks to complete
+        if let Some(web_handle) = web_handle {
+            let _ = tokio::join!(manager_handle, proxy_handle, web_handle);
+        } else {
+            let _ = tokio::join!(manager_handle, proxy_handle);
         }
-    ).await;
+    })
+    .await;
 
     match shutdown_timeout {
         Ok(_) => {

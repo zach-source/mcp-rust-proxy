@@ -1,0 +1,65 @@
+[package]
+name = "mcp-proxy-server"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mcp-proxy-server"
+path = "src/main.rs"
+
+[dependencies]
+# Internal dependencies
+mcp-proxy-core.workspace = true
+mcp-proxy-shared.workspace = true
+
+# Web framework
+warp.workspace = true
+
+# Async runtime
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+toml.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# State management
+dashmap.workspace = true
+arc-swap.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Utilities
+uuid.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+
+# File watching
+notify = "6"
+
+# Metrics
+prometheus = "0.13"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Additional dependencies
+tokio-stream = "0.1"
+bytes = "1.10"
+
+[dev-dependencies]
+mockall.workspace = true
+tempfile.workspace = true
+pretty_assertions.workspace = true

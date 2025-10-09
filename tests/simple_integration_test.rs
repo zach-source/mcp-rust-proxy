@@ -1,8 +1,10 @@
 #[cfg(test)]
 mod simple_tests {
-    use mcp_rust_proxy::protocol::{JsonRpcMessage, JsonRpcV2Message, JsonRpcRequest, JsonRpcResponse, JsonRpcId, mcp};
+    use mcp_rust_proxy::protocol::{
+        mcp, JsonRpcId, JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, JsonRpcV2Message,
+    };
     use serde_json::json;
-    
+
     #[test]
     fn test_protocol_ping_request_creation() {
         let ping = mcp::create_ping_request(JsonRpcId::Number(1));
@@ -10,7 +12,7 @@ mod simple_tests {
         assert!(json_str.contains("ping"));
         assert!(json_str.contains("\"id\":1"));
     }
-    
+
     #[test]
     fn test_protocol_ping_response_parsing() {
         let response_json = json!({
@@ -18,9 +20,9 @@ mod simple_tests {
             "id": 1,
             "result": {}
         });
-        
+
         let response: JsonRpcMessage = serde_json::from_value(response_json).unwrap();
-        
+
         match response {
             JsonRpcMessage::V2(JsonRpcV2Message::Response(resp)) => {
                 assert!(matches!(resp.id, JsonRpcId::Number(1)));
@@ -30,7 +32,7 @@ mod simple_tests {
             _ => panic!("Expected response"),
         }
     }
-    
+
     #[test]
     fn test_protocol_cancellation_notification() {
         let cancel_json = json!({
@@ -41,9 +43,9 @@ mod simple_tests {
                 "reason": "User cancelled"
             }
         });
-        
+
         let message: JsonRpcMessage = serde_json::from_value(cancel_json).unwrap();
-        
+
         match message {
             JsonRpcMessage::V2(JsonRpcV2Message::Notification(notif)) => {
                 assert_eq!(notif.method, "notifications/cancelled");

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MCP Proxy",
+  "version": "0.1.0",
+  "identifier": "com.mcp-proxy.manager",
+  "build": {
+    "beforeDevCommand": "cd ../yew-ui && $HOME/.cargo/bin/trunk serve --port 1420",
+    "beforeBuildCommand": "cd ../yew-ui && $HOME/.cargo/bin/trunk build --release",
+    "frontendDist": "/Users/ztaylor/repos/zach-source/mcp-rust-proxy/feature-rust-mcp-proxy/yew-ui/dist",
+    "devUrl": "http://localhost:1420"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "MCP Proxy Manager",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/mcp-proxy-server"
+    ],
+    "resources": [
+      "../../configs/examples/basic.yaml",
+      "../../configs/examples/advanced.yaml"
+    ]
+  }
+}

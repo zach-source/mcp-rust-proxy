@@ -1,14 +1,14 @@
+use super::{Connection, Transport, TransportType};
+use crate::error::{Result, TransportError};
+use crate::state::{LogEntry, ServerInfo};
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncBufReadExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout, ChildStderr, Command};
-use tokio::sync::Mutex;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use crate::error::{TransportError, Result};
-use crate::state::{ServerInfo, LogEntry};
-use super::{Connection, Transport, TransportType};
 use chrono::Utc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+use tokio::sync::Mutex;
 
 pub struct StdioTransport {
     command: String,
@@ -70,14 +70,21 @@ impl Transport for StdioTransport {
             cmd.current_dir(dir);
         }
 
-        let mut child = cmd.spawn()
-            .map_err(|e| TransportError::ConnectionFailed(format!("Failed to spawn process: {}", e)))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            TransportError::ConnectionFailed(format!("Failed to spawn process: {}", e))
+        })?;
 
-        let stdin = child.stdin.take()
+        let stdin = child
+            .stdin
+            .take()
             .ok_or_else(|| TransportError::ConnectionFailed("Failed to get stdin".into()))?;
-        let stdout = child.stdout.take()
+        let stdout = child
+            .stdout
+            .take()
             .ok_or_else(|| TransportError::ConnectionFailed("Failed to get stdout".into()))?;
-        let stderr = child.stderr.take()
+        let stderr = child
+            .stderr
+            .take()
             .ok_or_else(|| TransportError::ConnectionFailed("Failed to get stderr".into()))?;
 
         // Start stderr reader if we have server info
@@ -90,14 +97,14 @@ impl Transport for StdioTransport {
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     tracing::debug!("Captured stderr from process: {}", line);
-                    
+
                     // Write to log file if logger is available
                     if let Some(ref logger) = server_info_clone.logger {
                         if let Err(e) = logger.write_stderr(&line).await {
                             tracing::error!("Failed to write stderr to log file: {}", e);
                         }
                     }
-                    
+
                     let log_entry = LogEntry {
                         timestamp: Utc::now(),
                         level: "error".to_string(),
@@ -141,13 +148,18 @@ impl Connection for StdioConnection {
         }
 
         let mut stdin = self.stdin.lock().await;
-        
-        tracing::trace!("Sending to stdio: {}", std::str::from_utf8(&data).unwrap_or("<binary>"));
-        
-        stdin.write_all(&data)
+
+        tracing::trace!(
+            "Sending to stdio: {}",
+            std::str::from_utf8(&data).unwrap_or("<binary>")
+        );
+
+        stdin
+            .write_all(&data)
             .await
             .map_err(|e| TransportError::SendFailed(e.to_string()))?;
-        stdin.flush()
+        stdin
+            .flush()
             .await
             .map_err(|e| TransportError::SendFailed(e.to_string()))?;
 
@@ -161,13 +173,14 @@ impl Connection for StdioConnection {
 
         let mut stdout = self.stdout.lock().await;
         let mut buffer = BytesMut::with_capacity(8192);
-        
+
         // Read until we get a complete message (assuming newline-delimited JSON)
         loop {
-            let n = stdout.read_buf(&mut buffer)
+            let n = stdout
+                .read_buf(&mut buffer)
                 .await
                 .map_err(|e| TransportError::ReceiveFailed(e.to_string()))?;
-            
+
             if n == 0 {
                 self.closed.store(true, Ordering::SeqCst);
                 return Err(TransportError::Closed.into());
@@ -179,7 +192,7 @@ impl Connection for StdioConnection {
                 let msg_bytes = message.freeze();
                 let msg_str = std::str::from_utf8(&msg_bytes).unwrap_or("<binary>");
                 tracing::trace!("Received from stdio: {}", msg_str);
-                
+
                 // Write to stdout log file if logger is available
                 if let Some(ref server_info) = self.server_info {
                     if let Some(ref logger) = server_info.logger {
@@ -187,7 +200,7 @@ impl Connection for StdioConnection {
                             tracing::error!("Failed to write stdout to log file: {}", e);
                         }
                     }
-                    
+
                     // Also broadcast non-JSON messages as logs
                     if !msg_str.trim_start().starts_with('{') {
                         let log_entry = LogEntry {
@@ -198,12 +211,13 @@ impl Connection for StdioConnection {
                         server_info.broadcast_log(log_entry);
                     }
                 }
-                
+
                 return Ok(msg_bytes);
             }
 
             // Buffer is getting too large
-            if buffer.len() > 1024 * 1024 { // 1MB limit
+            if buffer.len() > 1024 * 1024 {
+                // 1MB limit
                 return Err(TransportError::InvalidFormat.into());
             }
         }
@@ -211,19 +225,19 @@ impl Connection for StdioConnection {
 
     async fn close(&self) -> Result<()> {
         self.closed.store(true, Ordering::SeqCst);
-        
+
         let mut child = self.child.lock().await;
-        
+
         // Try graceful shutdown first with SIGTERM on Unix
         #[cfg(unix)]
         {
             use nix::sys::signal::{self, Signal};
             use nix::unistd::Pid;
-            
+
             if let Some(id) = child.id() {
                 let pid = Pid::from_raw(id as i32);
                 let _ = signal::kill(pid, Signal::SIGTERM);
-                
+
                 // Give process time to exit gracefully
                 tokio::select! {
                     _ = child.wait() => {
@@ -238,7 +252,7 @@ impl Connection for StdioConnection {
                 }
             }
         }
-        
+
         #[cfg(not(unix))]
         {
             if let Err(e) = child.kill().await {
@@ -248,7 +262,7 @@ impl Connection for StdioConnection {
 
         // Wait for the process to actually exit
         let _ = child.wait().await;
-        
+
         Ok(())
     }
 
