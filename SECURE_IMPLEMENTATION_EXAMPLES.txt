@@ -1,0 +1,630 @@
+// SECURE IMPLEMENTATION EXAMPLES
+// These are recommended secure coding patterns to address the security audit findings
+
+use warp::{Filter, Rejection, Reply};
+use std::sync::Arc;
+use governor::{Quota, RateLimiter};
+use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
+use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
+use regex::Regex;
+use lazy_static::lazy_static;
+
+// ============== 1. AUTHENTICATION & AUTHORIZATION ==============
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Claims {
+    sub: String,
+    exp: usize,
+    role: String,
+}
+
+#[derive(Clone)]
+struct AuthUser {
+    user_id: String,
+    role: UserRole,
+}
+
+#[derive(Clone, PartialEq)]
+enum UserRole {
+    Admin,
+    User,
+    ReadOnly,
+}
+
+/// Secure JWT-based authentication middleware
+fn with_auth(secret: String) -> impl Filter<Extract = (AuthUser,), Error = Rejection> + Clone {
+    warp::header::optional("authorization")
+        .and_then(move |auth_header: Option<String>| {
+            let secret = secret.clone();
+            async move {
+                match auth_header {
+                    Some(header) if header.starts_with("Bearer ") => {
+                        let token = header.trim_start_matches("Bearer ");
+                        match decode::<Claims>(
+                            token,
+                            &DecodingKey::from_secret(secret.as_ref()),
+                            &Validation::default()
+                        ) {
+                            Ok(token_data) => {
+                                let role = match token_data.claims.role.as_str() {
+                                    "admin" => UserRole::Admin,
+                                    "readonly" => UserRole::ReadOnly,
+                                    _ => UserRole::User,
+                                };
+
+                                Ok(AuthUser {
+                                    user_id: token_data.claims.sub,
+                                    role,
+                                })
+                            }
+                            Err(_) => Err(warp::reject::custom(AuthError::InvalidToken))
+                        }
+                    }
+                    _ => Err(warp::reject::custom(AuthError::MissingToken))
+                }
+            }
+        })
+}
+
+/// Authorization check for specific operations
+fn require_role(required_role: UserRole) -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    warp::any()
+        .and(with_auth("your_secret_key".to_string()))
+        .and_then(move |user: AuthUser| {
+            let required = required_role.clone();
+            async move {
+                if user.role == UserRole::Admin || user.role == required {
+                    Ok(())
+                } else {
+                    Err(warp::reject::custom(AuthError::Unauthorized))
+                }
+            }
+        })
+        .untuple_one()
+}
+
+// ============== 2. RATE LIMITING ==============
+
+use std::num::NonZeroU32;
+use governor::clock::DefaultClock;
+use governor::state::keyed::DashMapStateStore;
+
+/// Per-IP rate limiting middleware
+fn with_rate_limit() -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    let limiter = Arc::new(
+        RateLimiter::<String, DashMapStateStore<String>, DefaultClock>::dashmap(
+            Quota::per_second(NonZeroU32::new(10).unwrap())
+        )
+    );
+
+    warp::addr::remote()
+        .and_then(move |addr: Option<std::net::SocketAddr>| {
+            let limiter = limiter.clone();
+            async move {
+                let ip = addr
+                    .map(|a| a.ip().to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                match limiter.check_key(&ip) {
+                    Ok(_) => Ok(()),
+                    Err(_) => Err(warp::reject::custom(RateLimitError::TooManyRequests))
+                }
+            }
+        })
+        .untuple_one()
+}
+
+// ============== 3. INPUT VALIDATION & SANITIZATION ==============
+
+lazy_static! {
+    static ref VALID_ID_REGEX: Regex = Regex::new(r"^[a-zA-Z0-9_-]{1,64}$").unwrap();
+    static ref SCRIPT_TAG_REGEX: Regex = Regex::new(r"(?i)<script[^>]*>.*?</script>").unwrap();
+    static ref SQL_INJECTION_REGEX: Regex = Regex::new(
+        r"(?i)(union|select|insert|update|delete|drop|create|alter|exec|execute|script|javascript|onclick)"
+    ).unwrap();
+}
+
+/// Comprehensive input validation
+#[derive(Debug)]
+struct ValidationError {
+    field: String,
+    message: String,
+}
+
+trait Validate {
+    fn validate(&self) -> Result<(), Vec<ValidationError>>;
+}
+
+impl Validate for FeedbackSubmission {
+    fn validate(&self) -> Result<(), Vec<ValidationError>> {
+        let mut errors = Vec::new();
+
+        // Validate response_id format
+        if !VALID_ID_REGEX.is_match(&self.response_id) {
+            errors.push(ValidationError {
+                field: "response_id".to_string(),
+                message: "Invalid ID format".to_string(),
+            });
+        }
+
+        // Validate score
+        if !self.score.is_finite() || self.score < -1.0 || self.score > 1.0 {
+            errors.push(ValidationError {
+                field: "score".to_string(),
+                message: "Score must be between -1.0 and 1.0".to_string(),
+            });
+        }
+
+        // Sanitize and validate feedback text
+        if let Some(ref text) = self.feedback_text {
+            if text.len() > 1000 {
+                errors.push(ValidationError {
+                    field: "feedback_text".to_string(),
+                    message: "Text too long (max 1000 chars)".to_string(),
+                });
+            }
+
+            if SCRIPT_TAG_REGEX.is_match(text) || SQL_INJECTION_REGEX.is_match(text) {
+                errors.push(ValidationError {
+                    field: "feedback_text".to_string(),
+                    message: "Invalid characters detected".to_string(),
+                });
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+}
+
+/// Sanitize text input to prevent XSS
+fn sanitize_text(input: &str) -> String {
+    // Remove HTML tags
+    let no_html = SCRIPT_TAG_REGEX.replace_all(input, "");
+
+    // HTML encode special characters
+    no_html
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
+// ============== 4. SECURE SQL QUERIES ==============
+
+use rusqlite::{params, Connection, Result};
+
+/// Safe parameterized query builder
+struct SecureQueryBuilder {
+    base_query: String,
+    conditions: Vec<String>,
+    params: Vec<Box<dyn rusqlite::ToSql>>,
+}
+
+impl SecureQueryBuilder {
+    fn new(base: &str) -> Self {
+        Self {
+            base_query: base.to_string(),
+            conditions: Vec::new(),
+            params: Vec::new(),
+        }
+    }
+
+    fn add_condition<T: rusqlite::ToSql + 'static>(&mut self, condition: &str, param: T) {
+        self.conditions.push(condition.to_string());
+        self.params.push(Box::new(param));
+    }
+
+    fn build(&self) -> String {
+        if self.conditions.is_empty() {
+            self.base_query.clone()
+        } else {
+            format!("{} WHERE {}", self.base_query, self.conditions.join(" AND "))
+        }
+    }
+
+    fn execute(&self, conn: &Connection) -> Result<Vec<ResponseSummary>> {
+        let sql = self.build();
+        let mut stmt = conn.prepare(&sql)?;
+
+        let param_refs: Vec<&dyn rusqlite::ToSql> = self.params
+            .iter()
+            .map(|p| p.as_ref() as &dyn rusqlite::ToSql)
+            .collect();
+
+        let results = stmt.query_map(&param_refs[..], |row| {
+            Ok(ResponseSummary {
+                response_id: row.get(0)?,
+                timestamp: row.get(1)?,
+                weight: row.get(2)?,
+                agent: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(results)
+    }
+}
+
+// ============== 5. SECURE FILE OPERATIONS ==============
+
+use std::path::{Path, PathBuf};
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
+
+/// Secure temporary file handling
+async fn create_secure_temp_file(content: &str) -> Result<PathBuf, std::io::Error> {
+    let mut tmpfile = NamedTempFile::new_in("/var/tmp")?;
+
+    // Set restrictive permissions (owner read/write only)
+    #[cfg(unix)]
+    {
+        let permissions = Permissions::from_mode(0o600);
+        tmpfile.as_file().set_permissions(permissions)?;
+    }
+
+    // Write content
+    use std::io::Write;
+    tmpfile.write_all(content.as_bytes())?;
+    tmpfile.flush()?;
+
+    // Return path (file will be auto-deleted when dropped)
+    Ok(tmpfile.into_temp_path().to_path_buf())
+}
+
+/// Validate and sanitize file paths to prevent traversal
+fn validate_path(user_input: &str, base_dir: &Path) -> Result<PathBuf, ValidationError> {
+    // Reject path traversal attempts
+    if user_input.contains("..") || user_input.contains("~") {
+        return Err(ValidationError {
+            field: "path".to_string(),
+            message: "Invalid path characters".to_string(),
+        });
+    }
+
+    // Construct full path
+    let full_path = base_dir.join(user_input);
+
+    // Canonicalize and verify it's under base_dir
+    let canonical = full_path.canonicalize().map_err(|_| ValidationError {
+        field: "path".to_string(),
+        message: "Path does not exist".to_string(),
+    })?;
+
+    if !canonical.starts_with(base_dir) {
+        return Err(ValidationError {
+            field: "path".to_string(),
+            message: "Path traversal detected".to_string(),
+        });
+    }
+
+    Ok(canonical)
+}
+
+// ============== 6. SECURE ERROR HANDLING ==============
+
+use std::fmt;
+
+#[derive(Debug)]
+enum AppError {
+    Database(String),
+    Validation(Vec<ValidationError>),
+    Authentication(String),
+    RateLimit,
+    Internal(String),
+}
+
+impl AppError {
+    /// Get safe error message for API response
+    fn public_message(&self) -> &str {
+        match self {
+            AppError::Database(_) => "Database operation failed",
+            AppError::Validation(_) => "Validation failed",
+            AppError::Authentication(_) => "Authentication required",
+            AppError::RateLimit => "Too many requests",
+            AppError::Internal(_) => "Internal server error",
+        }
+    }
+
+    /// Log detailed error internally
+    fn log_error(&self) {
+        match self {
+            AppError::Database(e) => tracing::error!("Database error: {}", e),
+            AppError::Validation(errors) => {
+                tracing::warn!("Validation errors: {:?}", errors);
+            }
+            AppError::Authentication(e) => tracing::warn!("Auth error: {}", e),
+            AppError::RateLimit => tracing::info!("Rate limit exceeded"),
+            AppError::Internal(e) => tracing::error!("Internal error: {}", e),
+        }
+    }
+}
+
+/// Secure error response handler
+fn handle_error(error: AppError) -> impl Reply {
+    // Log full error details
+    error.log_error();
+
+    // Return generic message to client
+    let status = match error {
+        AppError::Validation(_) => warp::http::StatusCode::BAD_REQUEST,
+        AppError::Authentication(_) => warp::http::StatusCode::UNAUTHORIZED,
+        AppError::RateLimit => warp::http::StatusCode::TOO_MANY_REQUESTS,
+        _ => warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+    };
+
+    warp::reply::with_status(
+        warp::reply::json(&serde_json::json!({
+            "error": error.public_message()
+        })),
+        status,
+    )
+}
+
+// ============== 7. SECURITY HEADERS ==============
+
+/// Add security headers to all responses
+fn with_security_headers(reply: impl Reply) -> impl Reply {
+    warp::reply::with_header(
+        warp::reply::with_header(
+            warp::reply::with_header(
+                warp::reply::with_header(
+                    warp::reply::with_header(
+                        reply,
+                        "X-Content-Type-Options",
+                        "nosniff"
+                    ),
+                    "X-Frame-Options",
+                    "DENY"
+                ),
+                "X-XSS-Protection",
+                "1; mode=block"
+            ),
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self'"
+        ),
+        "Strict-Transport-Security",
+        "max-age=31536000; includeSubDomains"
+    )
+}
+
+// ============== 8. DATA REDACTION ==============
+
+use sha2::{Sha256, Digest};
+
+/// Redact sensitive information
+trait Redactable {
+    fn redact(&self) -> Self;
+}
+
+impl Redactable for LineageManifest {
+    fn redact(&self) -> Self {
+        LineageManifest {
+            response_id: self.response_id.clone(),
+            timestamp: self.timestamp,
+            agent: hash_identifier(&self.agent), // Hash user identifiers
+            model: self.model.clone(),
+            token_count: self.token_count,
+            context_tree: self.context_tree.iter()
+                .map(|node| ContextTreeNode {
+                    id: node.id.clone(),
+                    r#type: node.r#type,
+                    source: redact_source(&node.source),
+                    weight: node.weight,
+                    embedding_id: None, // Remove embedding references
+                    summary: node.summary.as_ref().map(|s| sanitize_text(s)),
+                })
+                .collect(),
+            provenance_tree: self.provenance_tree.clone(),
+        }
+    }
+}
+
+fn hash_identifier(input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    format!("user_{:x}", hasher.finalize())
+}
+
+fn redact_source(source: &str) -> String {
+    // Redact potential PII patterns (emails, IPs, etc.)
+    let email_regex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b").unwrap();
+    let ip_regex = Regex::new(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b").unwrap();
+
+    let mut redacted = email_regex.replace_all(source, "[EMAIL_REDACTED]").to_string();
+    redacted = ip_regex.replace_all(&redacted, "[IP_REDACTED]").to_string();
+
+    redacted
+}
+
+// ============== 9. SECURE CACHE CONFIGURATION ==============
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+struct SecureCacheConfig {
+    max_entries: usize,
+    max_memory_bytes: usize,
+    max_entries_per_user: usize,
+    ttl_seconds: i64,
+    current_memory: AtomicUsize,
+}
+
+impl SecureCacheConfig {
+    fn check_limits(&self, user_id: &str, entry_size: usize) -> Result<(), CacheError> {
+        // Check memory limit
+        let current = self.current_memory.load(Ordering::SeqCst);
+        if current + entry_size > self.max_memory_bytes {
+            return Err(CacheError::MemoryLimitExceeded);
+        }
+
+        // Check per-user limit (would need user entry tracking)
+        // Implementation would track entries per user_id
+
+        Ok(())
+    }
+
+    fn add_entry(&self, size: usize) {
+        self.current_memory.fetch_add(size, Ordering::SeqCst);
+    }
+
+    fn remove_entry(&self, size: usize) {
+        self.current_memory.fetch_sub(size, Ordering::SeqCst);
+    }
+}
+
+// ============== 10. SECURE SESSION MANAGEMENT ==============
+
+use uuid::Uuid;
+use std::collections::HashMap;
+use tokio::sync::RwLock;
+
+struct SecureSessionManager {
+    sessions: Arc<RwLock<HashMap<String, SessionData>>>,
+    max_sessions_per_user: usize,
+    session_timeout_seconds: i64,
+}
+
+struct SessionData {
+    user_id: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    last_accessed: chrono::DateTime<chrono::Utc>,
+    data: HashMap<String, String>,
+}
+
+impl SecureSessionManager {
+    async fn create_session(&self, user_id: String) -> Result<String, SessionError> {
+        let session_id = Uuid::new_v4().to_string();
+
+        // Check session limits for user
+        let sessions = self.sessions.read().await;
+        let user_session_count = sessions
+            .values()
+            .filter(|s| s.user_id == user_id)
+            .count();
+
+        if user_session_count >= self.max_sessions_per_user {
+            return Err(SessionError::TooManySessions);
+        }
+        drop(sessions);
+
+        // Create new session
+        let session_data = SessionData {
+            user_id,
+            created_at: chrono::Utc::now(),
+            last_accessed: chrono::Utc::now(),
+            data: HashMap::new(),
+        };
+
+        let mut sessions = self.sessions.write().await;
+        sessions.insert(session_id.clone(), session_data);
+
+        Ok(session_id)
+    }
+
+    async fn validate_session(&self, session_id: &str) -> Result<String, SessionError> {
+        let mut sessions = self.sessions.write().await;
+
+        match sessions.get_mut(session_id) {
+            Some(session) => {
+                // Check if session expired
+                let age = chrono::Utc::now() - session.last_accessed;
+                if age.num_seconds() > self.session_timeout_seconds {
+                    sessions.remove(session_id);
+                    return Err(SessionError::Expired);
+                }
+
+                // Update last accessed
+                session.last_accessed = chrono::Utc::now();
+                Ok(session.user_id.clone())
+            }
+            None => Err(SessionError::NotFound),
+        }
+    }
+
+    async fn cleanup_expired(&self) {
+        let mut sessions = self.sessions.write().await;
+        let now = chrono::Utc::now();
+
+        sessions.retain(|_, session| {
+            let age = now - session.last_accessed;
+            age.num_seconds() < self.session_timeout_seconds
+        });
+    }
+}
+
+// ============== ERROR TYPES ==============
+
+#[derive(Debug)]
+struct AuthError {
+    kind: AuthErrorKind,
+}
+
+#[derive(Debug)]
+enum AuthErrorKind {
+    MissingToken,
+    InvalidToken,
+    Unauthorized,
+}
+
+impl warp::reject::Reject for AuthError {}
+
+#[derive(Debug)]
+struct RateLimitError {
+    kind: RateLimitErrorKind,
+}
+
+#[derive(Debug)]
+enum RateLimitErrorKind {
+    TooManyRequests,
+}
+
+impl warp::reject::Reject for RateLimitError {}
+
+#[derive(Debug)]
+enum CacheError {
+    MemoryLimitExceeded,
+    EntryLimitExceeded,
+}
+
+#[derive(Debug)]
+enum SessionError {
+    TooManySessions,
+    NotFound,
+    Expired,
+}
+
+// ============== EXAMPLE SECURE ROUTE SETUP ==============
+
+/// Example of applying all security measures to routes
+fn setup_secure_routes(state: Arc<AppState>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    let trace_route = warp::path!("api" / "trace" / String)
+        .and(warp::get())
+        .and(with_auth("secret_key".to_string()))      // Authentication
+        .and(with_rate_limit())                         // Rate limiting
+        .and(require_role(UserRole::User))              // Authorization
+        .and(warp::query::<HashMap<String, String>>())
+        .and(with_state(state.clone()))
+        .and_then(|response_id: String, auth: AuthUser, _: (), _: (), params, state| async move {
+            // Validate input
+            if !VALID_ID_REGEX.is_match(&response_id) {
+                return Err(warp::reject::custom(ValidationError {
+                    field: "response_id".to_string(),
+                    message: "Invalid ID format".to_string(),
+                }));
+            }
+
+            // Process request
+            get_trace_secure(response_id, params, state, auth).await
+        })
+        .map(with_security_headers); // Add security headers
+
+    trace_route
+}
+
+// This file demonstrates secure implementation patterns for the Context Tracing Framework
+// Each section addresses specific vulnerabilities identified in the security audit
