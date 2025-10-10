@@ -398,6 +398,76 @@ pub fn initialize_schema(conn: &rusqlite::Connection) -> Result<(), StorageError
         [],
     )?;
 
+    // Create sessions table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            started_at TEXT NOT NULL,
+            ended_at TEXT,
+            user_query TEXT,
+            agent TEXT NOT NULL,
+            metadata TEXT,
+            session_score REAL
+        )",
+        [],
+    )?;
+
+    // Create indexes for sessions
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent)",
+        [],
+    )?;
+
+    // Create tasks table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tasks (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            description TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            task_score REAL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // Create indexes for tasks
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)",
+        [],
+    )?;
+
+    // Create task_responses junction table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS task_responses (
+            task_id TEXT NOT NULL,
+            response_id TEXT NOT NULL,
+            PRIMARY KEY (task_id, response_id),
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY (response_id) REFERENCES responses(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // Add session_id to responses table (migration)
+    conn.execute("ALTER TABLE responses ADD COLUMN session_id TEXT", [])
+        .ok(); // Ignore error if column already exists
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_responses_session ON responses(session_id)",
+        [],
+    )?;
+
     Ok(())
 }
 

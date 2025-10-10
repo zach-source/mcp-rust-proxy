@@ -183,6 +183,71 @@ pub struct ResponseSummary {
     pub agent: String,
 }
 
+/// Session tracking for grouping related responses
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Session {
+    /// Unique session identifier
+    pub id: String,
+    /// Session start time
+    pub started_at: DateTime<Utc>,
+    /// Session end time (None if still active)
+    pub ended_at: Option<DateTime<Utc>>,
+    /// Original user query/request
+    pub user_query: Option<String>,
+    /// Agent identifier
+    pub agent: String,
+    /// Session-level metadata
+    pub metadata: Option<String>,
+    /// Overall session score (average of task scores)
+    pub session_score: Option<f32>,
+}
+
+/// Task within a session
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Task {
+    /// Unique task identifier
+    pub id: String,
+    /// Session this task belongs to
+    pub session_id: String,
+    /// Task description
+    pub description: String,
+    /// Task status
+    pub status: TaskStatus,
+    /// When task was created
+    pub created_at: DateTime<Utc>,
+    /// When task was completed (None if not done)
+    pub completed_at: Option<DateTime<Utc>>,
+    /// Response IDs associated with this task
+    pub response_ids: Vec<String>,
+    /// Task quality score
+    pub task_score: Option<f32>,
+}
+
+/// Task status enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskStatus {
+    /// Task is pending
+    Pending,
+    /// Task is in progress
+    InProgress,
+    /// Task completed successfully
+    Completed,
+    /// Task failed
+    Failed,
+    /// Task cancelled
+    Cancelled,
+}
+
+/// Session summary with tasks and responses
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSummary {
+    pub session: Session,
+    pub tasks: Vec<Task>,
+    pub total_responses: usize,
+    pub total_contexts: usize,
+    pub average_score: f32,
+}
+
 impl ContextUnit {
     /// Validate context unit constraints
     pub fn validate(&self) -> Result<(), String> {
