@@ -39,103 +39,242 @@ impl RequestHandler {
             .and_then(|m| m.as_str())
             .ok_or_else(|| ProxyError::InvalidRequest("Missing method".to_string()))?;
 
-        // Handle based on method
-        let result =
-            match method {
-                "list" => {
-                    let params = request
-                        .get("params")
-                        .ok_or_else(|| ProxyError::InvalidRequest("Missing params".to_string()))?;
-                    self.handle_list(params, router).await?
-                }
-                "call" => {
-                    let params: CallParams =
-                        serde_json::from_value(request.get("params").cloned().ok_or_else(
-                            || ProxyError::InvalidRequest("Missing params".to_string()),
-                        )?)
-                        .map_err(|e| ProxyError::InvalidRequest(e.to_string()))?;
-                    self.handle_call(params, router).await?
-                }
-                "read" => {
-                    let params: ReadParams =
-                        serde_json::from_value(request.get("params").cloned().ok_or_else(
-                            || ProxyError::InvalidRequest("Missing params".to_string()),
-                        )?)
-                        .map_err(|e| ProxyError::InvalidRequest(e.to_string()))?;
-                    self.handle_read(params, router).await?
-                }
-                "ping" => {
-                    // Handle ping locally
-                    serde_json::json!({})
-                }
-                "tools/list" => {
-                    // Check cache first
-                    let cache = self.tools_list_cache.read().await;
-                    if let Some(cached) = cache.as_ref() {
-                        if cached.expires_at > Instant::now() {
-                            tracing::debug!("Returning cached tools/list response");
-                            return Ok(MCPResponse {
-                                jsonrpc: "2.0".to_string(),
-                                id,
-                                result: Some(cached.value.clone()),
-                                error: None,
-                            });
-                        }
-                    }
-                    drop(cache);
-
-                    // Cache miss or expired, fetch fresh data
-                    tracing::debug!("Cache miss for tools/list, fetching from servers");
-                    match self
-                        .forward_to_all_servers(method, request.get("params"))
+        // Start context tracking if enabled (for tool calls and reads)
+        let tracking_response_id =
+            if matches!(method, "call" | "tools/call" | "read" | "resources/read") {
+                if let Some(tracker) = &*self.state.context_tracker.read().await {
+                    match tracker
+                        .start_response("mcp-proxy".to_string(), "client".to_string())
                         .await
                     {
-                        Ok(result) => {
-                            // Update cache
-                            let mut cache = self.tools_list_cache.write().await;
-                            *cache = Some(CachedResponse {
-                                value: result.clone(),
-                                expires_at: Instant::now() + Duration::from_secs(120), // 2 minutes
-                            });
-                            result
+                        Ok(resp_id) => {
+                            tracing::debug!("Started tracking response: {}", resp_id);
+                            Some(resp_id)
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to fetch tools/list: {}", e);
+                            tracing::warn!("Failed to start response tracking: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+        // Handle based on method
+        let result = match method {
+            "list" => {
+                let params = request
+                    .get("params")
+                    .ok_or_else(|| ProxyError::InvalidRequest("Missing params".to_string()))?;
+                self.handle_list(params, router).await?
+            }
+            "call" | "tools/call" => {
+                // Support both "call" and "tools/call" methods
+                let params = request
+                    .get("params")
+                    .cloned()
+                    .ok_or_else(|| ProxyError::InvalidRequest("Missing params".to_string()))?;
+
+                // MCP spec uses "name" field, our CallParams uses "tool"
+                let tool_name = params
+                    .get("name")
+                    .or_else(|| params.get("tool"))
+                    .and_then(|n| n.as_str())
+                    .ok_or_else(|| ProxyError::InvalidRequest("Missing tool name".to_string()))?
+                    .to_string();
+
+                let arguments = params
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or(serde_json::json!({}));
+
+                // Check if this is a tracing tool
+                if tool_name.starts_with("mcp__proxy__tracing__") {
+                    let tracing_tool = tool_name.strip_prefix("mcp__proxy__tracing__").unwrap();
+                    match super::tracing_tools::handle_tracing_tool(
+                        tracing_tool,
+                        arguments,
+                        self.state.clone(),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(e) => {
                             return Ok(MCPResponse {
                                 jsonrpc: "2.0".to_string(),
                                 id,
                                 result: None,
                                 error: Some(MCPError {
                                     code: -32603,
-                                    message: "Failed to fetch tools list".to_string(),
+                                    message: e,
                                     data: None,
                                 }),
                             });
                         }
                     }
+                } else {
+                    let call_params = CallParams {
+                        tool: tool_name,
+                        arguments,
+                    };
+                    self.handle_call_with_tracking(call_params, router, &tracking_response_id)
+                        .await?
                 }
-                _ => {
-                    // For other unrecognized methods, try to forward to all servers
-                    match self
-                        .forward_to_all_servers(method, request.get("params"))
-                        .await
+            }
+            "read" | "resources/read" => {
+                let params: ReadParams = serde_json::from_value(
+                    request
+                        .get("params")
+                        .cloned()
+                        .ok_or_else(|| ProxyError::InvalidRequest("Missing params".to_string()))?,
+                )
+                .map_err(|e| ProxyError::InvalidRequest(e.to_string()))?;
+
+                // Check if this is a tracing resource
+                if params.uri.starts_with("trace://") {
+                    match super::tracing_tools::handle_tracing_resource(
+                        &params.uri,
+                        self.state.clone(),
+                    )
+                    .await
                     {
                         Ok(result) => result,
-                        Err(_) => {
+                        Err(e) => {
                             return Ok(MCPResponse {
                                 jsonrpc: "2.0".to_string(),
                                 id,
                                 result: None,
                                 error: Some(MCPError {
-                                    code: -32601,
-                                    message: format!("Method not found: {}", method),
+                                    code: -32603,
+                                    message: e,
                                     data: None,
                                 }),
                             });
                         }
                     }
+                } else {
+                    self.handle_read(params, router).await?
                 }
-            };
+            }
+            "ping" => {
+                // Handle ping locally
+                serde_json::json!({})
+            }
+            "tools/list" => {
+                // Check cache first
+                let cache = self.tools_list_cache.read().await;
+                if let Some(cached) = cache.as_ref() {
+                    if cached.expires_at > Instant::now() {
+                        tracing::debug!("Returning cached tools/list response");
+                        return Ok(MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id,
+                            result: Some(cached.value.clone()),
+                            error: None,
+                        });
+                    }
+                }
+                drop(cache);
+
+                // Cache miss or expired, fetch fresh data
+                tracing::debug!("Cache miss for tools/list, fetching from servers");
+                match self
+                    .forward_to_all_servers(method, request.get("params"))
+                    .await
+                {
+                    Ok(mut result) => {
+                        // Always add context tracing tools (they check if enabled internally)
+                        if let Some(tools_array) =
+                            result.get_mut("tools").and_then(|t| t.as_array_mut())
+                        {
+                            let tracing_tools = super::tracing_tools::get_tracing_tools();
+                            tools_array.extend(tracing_tools);
+                        }
+
+                        // Update cache
+                        let mut cache = self.tools_list_cache.write().await;
+                        *cache = Some(CachedResponse {
+                            value: result.clone(),
+                            expires_at: Instant::now() + Duration::from_secs(120), // 2 minutes
+                        });
+                        result
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to fetch tools/list: {}", e);
+                        return Ok(MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id,
+                            result: None,
+                            error: Some(MCPError {
+                                code: -32603,
+                                message: "Failed to fetch tools list".to_string(),
+                                data: None,
+                            }),
+                        });
+                    }
+                }
+            }
+            "resources/list" | "prompts/list" => {
+                // Handle resources/list and prompts/list similarly to tools/list
+                match self
+                    .forward_to_all_servers(method, request.get("params"))
+                    .await
+                {
+                    Ok(result) => result,
+                    Err(_) => {
+                        // If no backends have resources/prompts, return empty list with tracing resources
+                        if method == "resources/list" {
+                            let tracing_resources = super::tracing_tools::get_tracing_resources();
+                            serde_json::json!({ "resources": tracing_resources })
+                        } else {
+                            serde_json::json!({ "prompts": [] })
+                        }
+                    }
+                }
+            }
+            _ => {
+                // For other unrecognized methods, try to forward to all servers
+                match self
+                    .forward_to_all_servers(method, request.get("params"))
+                    .await
+                {
+                    Ok(result) => result,
+                    Err(_) => {
+                        return Ok(MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id,
+                            result: None,
+                            error: Some(MCPError {
+                                code: -32601,
+                                message: format!("Method not found: {}", method),
+                                data: None,
+                            }),
+                        });
+                    }
+                }
+            }
+        };
+
+        // Finalize context tracking if we were tracking this request
+        if let Some(resp_id) = tracking_response_id {
+            if let Some(tracker) = &*self.state.context_tracker.read().await {
+                match tracker.finalize_response(resp_id.clone(), None).await {
+                    Ok(manifest) => {
+                        tracing::info!(
+                            "Response {} tracked: {} contexts, manifest generated",
+                            resp_id,
+                            manifest.context_tree.len()
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to finalize response tracking: {}", e);
+                    }
+                }
+            }
+        }
 
         Ok(MCPResponse {
             jsonrpc: "2.0".to_string(),
@@ -162,21 +301,74 @@ impl RequestHandler {
         }
     }
 
+    async fn handle_call_with_tracking(
+        &self,
+        params: CallParams,
+        router: Arc<RequestRouter>,
+        tracking_response_id: &Option<String>,
+    ) -> Result<Value> {
+        let result = self.handle_call(params.clone(), router).await?;
+
+        // Record context from this backend call
+        if let Some(resp_id) = tracking_response_id {
+            // Extract server name from tool name
+            let server_name = if params.tool.starts_with("mcp__proxy__") {
+                let parts: Vec<&str> = params.tool.splitn(4, "__").collect();
+                if parts.len() >= 3 {
+                    parts[2].to_string()
+                } else {
+                    "unknown".to_string()
+                }
+            } else {
+                "unknown".to_string()
+            };
+
+            self.record_context_from_server(
+                &Some(resp_id.clone()),
+                &server_name,
+                "tools/call",
+                &params.tool,
+            )
+            .await;
+        }
+
+        Ok(result)
+    }
+
     async fn handle_call(&self, params: CallParams, router: Arc<RequestRouter>) -> Result<Value> {
-        // Find server that handles this tool
-        let server_name = router.get_server_for_tool(&params.tool).ok_or_else(|| {
-            ProxyError::ServerNotFound(format!("No server handles tool: {}", params.tool))
-        })?;
+        // Check if tool name has proxy prefix: mcp__proxy__{server}__{tool}
+        let (server_name, original_tool_name) = if params.tool.starts_with("mcp__proxy__") {
+            // Parse the prefixed name to extract server and original tool name
+            let parts: Vec<&str> = params.tool.splitn(4, "__").collect();
+            if parts.len() == 4 && parts[0] == "mcp" && parts[1] == "proxy" {
+                let server = parts[2].replace("_", "-");
+                let tool = parts[3].to_string();
+                (server, tool)
+            } else {
+                // Malformed prefix, try original routing
+                let server = router.get_server_for_tool(&params.tool).ok_or_else(|| {
+                    ProxyError::ServerNotFound(format!("No server handles tool: {}", params.tool))
+                })?;
+                (server, params.tool.clone())
+            }
+        } else {
+            // No prefix, use router to find server
+            let server = router.get_server_for_tool(&params.tool).ok_or_else(|| {
+                ProxyError::ServerNotFound(format!("No server handles tool: {}", params.tool))
+            })?;
+            (server, params.tool.clone())
+        };
 
         // Get connection from pool
         let conn = self.state.connection_pool.get(&server_name).await?;
 
-        // Forward request to server
+        // Forward request to server with ORIGINAL tool name (no prefix)
+        // Use MCP spec format: tools/call with "name" field
         let request = serde_json::json!({
             "jsonrpc": "2.0",
-            "method": "call",
+            "method": "tools/call",
             "params": {
-                "tool": params.tool,
+                "name": original_tool_name,
                 "arguments": params.arguments,
             },
             "id": 1
@@ -188,6 +380,10 @@ impl RequestHandler {
         // Get response
         let response = conn.recv().await?;
         let response: Value = serde_json::from_slice(&response)?;
+
+        // Store the server_name as a field on self temporarily (we'll need to refactor this)
+        // For now, we can't easily pass tracking context through, so lineage will be recorded
+        // at the handle_request level
 
         // Extract result
         response
@@ -279,7 +475,7 @@ impl RequestHandler {
                 .await;
 
                 match result {
-                    Ok(Ok(value)) => (server_name, Ok(value)),
+                    Ok(Ok(value)) => (server_name.clone(), Ok(value)),
                     Ok(Err(e)) => (server_name, Err(e)),
                     Err(_) => (server_name.clone(), Err(ProxyError::Timeout)),
                 }
@@ -289,13 +485,13 @@ impl RequestHandler {
         // Wait for all requests to complete
         let results = join_all(futures).await;
 
-        // Collect successful results
-        let mut aggregated_results = Vec::new();
+        // Collect successful results with server name
+        let mut aggregated_results: Vec<(String, Value)> = Vec::new();
         for result in results {
             match result {
                 Ok((server_name, Ok(value))) => {
                     tracing::debug!("Server {} successfully handled {}", server_name, method);
-                    aggregated_results.push(value);
+                    aggregated_results.push((server_name, value));
                 }
                 Ok((server_name, Err(e))) => {
                     tracing::debug!("Server {} failed to handle {}: {}", server_name, method, e);
@@ -316,34 +512,156 @@ impl RequestHandler {
         match method {
             "tools/list" => {
                 let mut all_tools = Vec::new();
-                for result in aggregated_results {
+                for (server_name, result) in aggregated_results {
                     if let Some(tools) = result.get("tools").and_then(|t| t.as_array()) {
-                        all_tools.extend(tools.iter().cloned());
+                        // Prefix each tool name with mcp__proxy__{server_name}__
+                        for tool in tools {
+                            let mut prefixed_tool = tool.clone();
+                            if let Some(tool_obj) = prefixed_tool.as_object_mut() {
+                                if let Some(name) = tool_obj.get("name").and_then(|n| n.as_str()) {
+                                    let name_str = name.to_string();
+                                    let prefixed_name = format!(
+                                        "mcp__proxy__{}__{}",
+                                        server_name.replace("-", "_"),
+                                        name_str
+                                    );
+                                    tool_obj.insert(
+                                        "name".to_string(),
+                                        serde_json::json!(prefixed_name),
+                                    );
+
+                                    // Also store original name for reference
+                                    tool_obj.insert(
+                                        "originalName".to_string(),
+                                        serde_json::json!(name_str),
+                                    );
+                                    tool_obj.insert(
+                                        "server".to_string(),
+                                        serde_json::json!(server_name.clone()),
+                                    );
+                                }
+                            }
+                            all_tools.push(prefixed_tool);
+                        }
                     }
                 }
                 Ok(serde_json::json!({ "tools": all_tools }))
             }
             "resources/list" => {
                 let mut all_resources = Vec::new();
-                for result in aggregated_results {
+                for (server_name, result) in aggregated_results {
                     if let Some(resources) = result.get("resources").and_then(|r| r.as_array()) {
-                        all_resources.extend(resources.iter().cloned());
+                        // Prefix each resource URI with server name
+                        for resource in resources {
+                            let mut prefixed_resource = resource.clone();
+                            if let Some(res_obj) = prefixed_resource.as_object_mut() {
+                                if let Some(uri) = res_obj.get("uri").and_then(|u| u.as_str()) {
+                                    let uri_str = uri.to_string();
+                                    let prefixed_uri = format!(
+                                        "mcp__proxy__{}://{}",
+                                        server_name.replace("-", "_"),
+                                        uri_str
+                                    );
+                                    res_obj
+                                        .insert("uri".to_string(), serde_json::json!(prefixed_uri));
+                                    res_obj.insert(
+                                        "originalUri".to_string(),
+                                        serde_json::json!(uri_str),
+                                    );
+                                    res_obj.insert(
+                                        "server".to_string(),
+                                        serde_json::json!(server_name.clone()),
+                                    );
+                                }
+                            }
+                            all_resources.push(prefixed_resource);
+                        }
                     }
                 }
+
+                // Add context tracing resources
+                let tracing_resources = super::tracing_tools::get_tracing_resources();
+                all_resources.extend(tracing_resources);
+
                 Ok(serde_json::json!({ "resources": all_resources }))
             }
             "prompts/list" => {
                 let mut all_prompts = Vec::new();
-                for result in aggregated_results {
+                for (server_name, result) in aggregated_results {
                     if let Some(prompts) = result.get("prompts").and_then(|p| p.as_array()) {
-                        all_prompts.extend(prompts.iter().cloned());
+                        // Prefix each prompt name with server name
+                        for prompt in prompts {
+                            let mut prefixed_prompt = prompt.clone();
+                            if let Some(prompt_obj) = prefixed_prompt.as_object_mut() {
+                                if let Some(name) = prompt_obj.get("name").and_then(|n| n.as_str())
+                                {
+                                    let name_str = name.to_string();
+                                    let prefixed_name = format!(
+                                        "mcp__proxy__{}__{}",
+                                        server_name.replace("-", "_"),
+                                        name_str
+                                    );
+                                    prompt_obj.insert(
+                                        "name".to_string(),
+                                        serde_json::json!(prefixed_name),
+                                    );
+                                    prompt_obj.insert(
+                                        "originalName".to_string(),
+                                        serde_json::json!(name_str),
+                                    );
+                                    prompt_obj.insert(
+                                        "server".to_string(),
+                                        serde_json::json!(server_name.clone()),
+                                    );
+                                }
+                            }
+                            all_prompts.push(prefixed_prompt);
+                        }
                     }
                 }
                 Ok(serde_json::json!({ "prompts": all_prompts }))
             }
             _ => {
                 // For other methods, just return the first successful result
-                Ok(aggregated_results.into_iter().next().unwrap())
+                Ok(aggregated_results.into_iter().next().unwrap().1)
+            }
+        }
+    }
+
+    /// Record a context unit from a backend server call
+    async fn record_context_from_server(
+        &self,
+        tracking_response_id: &Option<String>,
+        server_name: &str,
+        method: &str,
+        tool_or_resource: &str,
+    ) {
+        if let Some(resp_id) = tracking_response_id {
+            if let Some(tracker) = &*self.state.context_tracker.read().await {
+                use crate::context::types::{ContextType, ContextUnit};
+                use chrono::Utc;
+                use uuid::Uuid;
+
+                let context = ContextUnit {
+                    id: format!("ctx_{}", Uuid::new_v4()),
+                    r#type: ContextType::External,
+                    source: format!("{}::{}", server_name, tool_or_resource),
+                    timestamp: Utc::now(),
+                    embedding_id: None,
+                    summary: Some(format!("{} from {}", method, server_name)),
+                    version: 1,
+                    previous_version_id: None,
+                    aggregate_score: 0.0,
+                    feedback_count: 0,
+                };
+
+                // Add context with default retrieval score of 0.8
+                if let Err(e) = tracker
+                    .add_context(resp_id.clone(), context, Some(0.8))
+                    .await
+                {
+                    tracing::warn!("Failed to record context: {}", e);
+                }
             }
         }
     }

@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 pub struct HttpSseTransport {
     url: String,
+    #[allow(dead_code)]
     headers: HashMap<String, String>,
+    #[allow(dead_code)]
     timeout_ms: u64,
 }
 

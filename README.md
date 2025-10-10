@@ -2,12 +2,18 @@
 
 A fast and efficient Model Context Protocol (MCP) proxy server written in Rust. This proxy aggregates multiple MCP servers and provides a unified interface, with built-in monitoring, health checks, and a web UI for management.
 
-**New**: The project now includes a modern Yew-based web UI alongside the original HTML/JS UI. See [Yew UI Integration](YEW_UI_INTEGRATION.md) for details.
+**New Features:**
+- 🎯 **AI Context Tracing Framework**: Track which context units influenced AI responses
+- 🔍 **Self-Aware AI**: LLMs can inspect their own context provenance and quality
+- 📊 **Quality Feedback Loop**: Continuous improvement through feedback propagation
+- 🌐 **Modern Yew UI**: Built-in web dashboard for monitoring (see [YEW_UI_INTEGRATION.md](YEW_UI_INTEGRATION.md))
 
 ## Features
 
+### Core Proxy Features
 - **Multi-Server Proxy**: Aggregate multiple MCP servers into a single endpoint
 - **Multiple Transports**: Support for stdio, HTTP/SSE, and WebSocket transports
+- **Tool Name Prefixing**: Prevent naming conflicts with `mcp__proxy__{server}__{tool}` format
 - **File-based Logging**: All server output captured to rotating log files with real-time streaming
 - **Configuration Management**: YAML/JSON configuration with environment variable substitution
 - **Server Lifecycle Management**: Start, stop, and restart individual servers
@@ -16,6 +22,33 @@ A fast and efficient Model Context Protocol (MCP) proxy server written in Rust. 
 - **Metrics Collection**: Prometheus-compatible metrics for monitoring
 - **Connection Pooling**: Efficient connection management with automatic reconnection
 - **Graceful Shutdown**: Clean shutdown of all servers and connections
+
+### AI Context Tracing Features (NEW)
+- **Provenance Tracking**: Complete lineage manifests showing context → response relationships
+- **Multi-Factor Weighting**: Composite scoring (retrieval 40%, recency 30%, type 20%, length 10%)
+- **Hybrid Storage**: DashMap in-memory cache + SQLite persistence with WAL mode
+- **Bidirectional Queries**: Find responses using a context, or contexts in a response
+- **Feedback Propagation**: Quality ratings automatically update all contributing contexts
+- **Version Tracking**: Full evolution history for context units
+- **Quality Signals**: High/low-rated contexts exposed as MCP resources
+- **Self-Improvement**: LLMs can rate their own responses to improve future performance
+
+#### Context Tracing MCP Integration
+
+**5 Tools** for explicit operations:
+- `mcp__proxy__tracing__get_trace` - View response lineage
+- `mcp__proxy__tracing__query_context_impact` - Assess context impact
+- `mcp__proxy__tracing__get_response_contexts` - List contributing contexts
+- `mcp__proxy__tracing__get_evolution_history` - Track version history
+- `mcp__proxy__tracing__submit_feedback` - Submit quality ratings
+
+**4 Resources** for automatic context enrichment:
+- `trace://quality/top-contexts` - High-quality information sources
+- `trace://quality/deprecated-contexts` - Low-quality contexts to avoid
+- `trace://quality/recent-feedback` - Quality feedback trends
+- `trace://stats/cache` - Performance metrics
+
+See [TRACING_TOOLS_QUICKSTART.md](TRACING_TOOLS_QUICKSTART.md) for LLM agent usage guide.
 
 ## Quick Start
 
@@ -47,7 +80,33 @@ cargo run -- --config mcp-proxy.yaml
 
 3. Access the web UI at `http://localhost:3001`
 
-## Using with Claude Code
+## Using with Claude CLI (Stdio Mode)
+
+The proxy can run as an MCP server for Claude CLI, aggregating all your backend servers:
+
+```bash
+# Build the proxy
+cargo build --release  # or use debug: cargo build
+
+# Run with Claude CLI
+claude --mcp-config '{"mcpServers":{"proxy":{"command":"./target/debug/mcp-rust-proxy","args":["--config","mcp-proxy-config.yaml","--stdio"]}}}'
+```
+
+**What Claude gets:**
+- All tools from all configured backend servers (filesystem, git, memory, etc.)
+- Tool names prefixed: `mcp__proxy__{server}__{tool}` to prevent conflicts
+- 5 context tracing tools for self-awareness
+- 4 context quality resources for automatic context enrichment
+
+**Example tools available:**
+- `mcp__proxy__memory__create_entities` - From memory server
+- `mcp__proxy__git__commit` - From git server
+- `mcp__proxy__tracing__submit_feedback` - Built-in tracing
+- And many more...
+
+See [TRACING_TOOLS_QUICKSTART.md](TRACING_TOOLS_QUICKSTART.md) for full agent documentation.
+
+## Using with Claude Code (HTTP Mode)
 
 MCP Rust Proxy works seamlessly with Claude Code to manage multiple MCP servers. Here are some example configurations:
 

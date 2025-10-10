@@ -1,0 +1,58 @@
+# Integration test config with context7 and time servers
+servers:
+  # Context7 - Library documentation
+  context7:
+    command: "/nix/store/w99i58b5caqga9s9nhbdkgj1v4sxysmb-context7-mcp-1.0.20/bin/context7-mcp"
+    args: []
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+  # Memory - Knowledge graph
+  memory:
+    command: "/nix/store/syriwihrly43z3cq3665ri50cmmy9fdd-mcp-server-memory-2025.7.1/bin/mcp-server-memory"
+    args: []
+    env:
+      MEMORY_FILE_PATH: "/tmp/integration-test-memory.db"
+    transport:
+      type: stdio
+    restartOnFailure: true
+
+  # Time server - Time utilities
+  time:
+    command: "/nix/store/blkyfy6pa9xkfzvqkpkhvhgk59wzbmrs-mcp-server-time-2025.7.1/bin/mcp-server-time"
+    args: []
+    env: {}
+    transport:
+      type: stdio
+    restartOnFailure: true
+    healthCheck:
+      enabled: false
+
+# Proxy configuration
+proxy:
+  port: 3000
+  host: "127.0.0.1"
+  connectionPoolSize: 5
+  requestTimeoutMs: 30000
+  maxConcurrentRequests: 50
+
+# Disable web UI for test
+webUi:
+  enabled: false
+  port: 3001
+  host: "127.0.0.1"
+
+# Disable health checks for quick test
+healthCheck:
+  enabled: false
+
+# Enable context tracing
+contextTracing:
+  enabled: true
+  storageType: Hybrid
+  sqlitePath: "/tmp/test-context-tracing.db"
+  cacheSize: 1000
+  cacheTtlSeconds: 300
+  retentionDays: 30

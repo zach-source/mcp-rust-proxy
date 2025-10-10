@@ -14,8 +14,17 @@
     };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, crane, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      rust-overlay,
+      flake-utils,
+      crane,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
@@ -24,7 +33,10 @@
 
         # Rust toolchain configuration - use latest stable version
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" "rust-analyzer" ];
+          extensions = [
+            "rust-src"
+            "rust-analyzer"
+          ];
           targets = [
             "wasm32-unknown-unknown"
             "x86_64-unknown-linux-gnu"
@@ -38,14 +50,17 @@
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
         # Common build inputs
-        commonBuildInputs = with pkgs; [
-          openssl
-          pkg-config
-          perl # Required for OpenSSL build
-        ] ++ lib.optionals stdenv.isDarwin [
-          darwin.apple_sdk.frameworks.Security
-          darwin.apple_sdk.frameworks.SystemConfiguration
-        ];
+        commonBuildInputs =
+          with pkgs;
+          [
+            openssl
+            pkg-config
+            perl # Required for OpenSSL build
+          ]
+          ++ lib.optionals stdenv.isDarwin [
+            darwin.apple_sdk.frameworks.Security
+            darwin.apple_sdk.frameworks.SystemConfiguration
+          ];
 
         # Native build inputs
         nativeBuildInputs = with pkgs; [
@@ -61,12 +76,13 @@
         # Source filtering to improve caching
         src = pkgs.lib.cleanSourceWith {
           src = ./.;
-          filter = path: type:
-            (pkgs.lib.hasSuffix "\.html" path) ||
-            (pkgs.lib.hasSuffix "\.css" path) ||
-            (pkgs.lib.hasSuffix "\.js" path) ||
-            (pkgs.lib.hasInfix "/yew-ui/" path) ||
-            (craneLib.filterCargoSources path type);
+          filter =
+            path: type:
+            (pkgs.lib.hasSuffix "\.html" path)
+            || (pkgs.lib.hasSuffix "\.css" path)
+            || (pkgs.lib.hasSuffix "\.js" path)
+            || (pkgs.lib.hasInfix "/yew-ui/" path)
+            || (craneLib.filterCargoSources path type);
         };
 
         # Common cargo args
@@ -78,58 +94,77 @@
         };
 
         # Build dependencies only (for caching)
-        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
-          # Ensure pkg-config is available during dependency build
-          nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ pkgs.pkg-config pkgs.openssl.dev ];
-          # Disable any custom linker configuration that might conflict
-          CARGO_TARGET_DIR = "target";
-        });
+        cargoArtifacts = craneLib.buildDepsOnly (
+          commonArgs
+          // {
+            # Ensure pkg-config is available during dependency build
+            nativeBuildInputs = commonArgs.nativeBuildInputs ++ [
+              pkgs.pkg-config
+              pkgs.openssl.dev
+            ];
+            # Disable any custom linker configuration that might conflict
+            CARGO_TARGET_DIR = "target";
+          }
+        );
 
         # Function to build for a specific target
-        buildForTarget = target: extraArgs: craneLib.buildPackage (commonArgs // {
-          inherit cargoArtifacts;
-          cargoExtraArgs = "--target ${target}";
-          
-          # Set environment variables for the build
-          BUILD_YEW_UI = "1";
-          CARGO_REGISTRIES_CRATES_IO_PROTOCOL = "sparse";
-          RUSTFLAGS = "--cfg rustc_1_82";
-          
-          # Override any user-specific linker configuration
-          CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (pkgs.stdenv.isDarwin && target == "x86_64-apple-darwin") "cc";
-          CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (pkgs.stdenv.isDarwin && target == "aarch64-apple-darwin") "cc";
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = pkgs.lib.optionalString (target == "x86_64-unknown-linux-gnu") "cc";
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = 
-            pkgs.lib.optionalString (target == "aarch64-unknown-linux-gnu") 
-              "${pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc}/bin/aarch64-unknown-linux-gnu-gcc";
-          
-          # Add cross-compilation dependencies
-          depsBuildBuild = pkgs.lib.optionals (target == "aarch64-unknown-linux-gnu") [
-            pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc
-          ];
-          
-          # Pre-build hook to build Yew UI
-          preBuild = ''
-            # Build Yew UI
-            pushd yew-ui
-            trunk build --release
-            popd
-            
-            # Copy built UI to expected location
-            mkdir -p yew-dist
-            cp -r yew-ui/dist/* yew-dist/
-          '';
-        } // extraArgs);
+        buildForTarget =
+          target: extraArgs:
+          craneLib.buildPackage (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              cargoExtraArgs = "--target ${target}";
+
+              # Set environment variables for the build
+              BUILD_YEW_UI = "1";
+              CARGO_REGISTRIES_CRATES_IO_PROTOCOL = "sparse";
+              # RUSTFLAGS = "--cfg rustc_1_82";
+
+              # Override any user-specific linker configuration
+              CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (
+                pkgs.stdenv.isDarwin && target == "x86_64-apple-darwin"
+              ) "cc";
+              CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (
+                pkgs.stdenv.isDarwin && target == "aarch64-apple-darwin"
+              ) "cc";
+              CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = pkgs.lib.optionalString (
+                target == "x86_64-unknown-linux-gnu"
+              ) "cc";
+              CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = pkgs.lib.optionalString (
+                target == "aarch64-unknown-linux-gnu"
+              ) "${pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc}/bin/aarch64-unknown-linux-gnu-gcc";
+
+              # Add cross-compilation dependencies
+              depsBuildBuild = pkgs.lib.optionals (target == "aarch64-unknown-linux-gnu") [
+                pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc
+              ];
+
+              # Pre-build hook to build Yew UI
+              preBuild = ''
+                # Build Yew UI
+                pushd yew-ui
+                trunk build --release
+                popd
+
+                # Copy built UI to expected location
+                mkdir -p yew-dist
+                cp -r yew-ui/dist/* yew-dist/
+              '';
+            }
+            // extraArgs
+          );
 
         # Build packages for all targets
         packages = {
           default = buildForTarget "x86_64-unknown-linux-gnu" { };
-          
+
           x86_64-linux = buildForTarget "x86_64-unknown-linux-gnu" { };
           aarch64-linux = buildForTarget "aarch64-unknown-linux-gnu" { };
-          
+
           # macOS builds (only on Darwin)
-        } // pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
+        }
+        // pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
           x86_64-darwin = buildForTarget "x86_64-apple-darwin" { };
           aarch64-darwin = buildForTarget "aarch64-apple-darwin" { };
         };
@@ -137,45 +172,50 @@
         # Cross-compilation packages (Linux only)
         crossPackages = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           # Cross-compile from Linux to macOS
-          x86_64-darwin-cross = let
-            darwinPkgs = import nixpkgs {
-              system = "x86_64-darwin";
-              overlays = overlays;
+          x86_64-darwin-cross =
+            let
+              darwinPkgs = import nixpkgs {
+                system = "x86_64-darwin";
+                overlays = overlays;
+              };
+            in
+            buildForTarget "x86_64-apple-darwin" {
+              depsBuildBuild = [ pkgs.xcbuild ];
+              buildInputs = commonBuildInputs ++ [
+                darwinPkgs.darwin.apple_sdk.frameworks.Security
+                darwinPkgs.darwin.apple_sdk.frameworks.SystemConfiguration
+              ];
             };
-          in buildForTarget "x86_64-apple-darwin" {
-            depsBuildBuild = [ pkgs.xcbuild ];
-            buildInputs = commonBuildInputs ++ [
-              darwinPkgs.darwin.apple_sdk.frameworks.Security
-              darwinPkgs.darwin.apple_sdk.frameworks.SystemConfiguration
-            ];
-          };
         };
 
       in
       {
-        packages = packages // crossPackages // {
-          # Docker image
-          docker = pkgs.dockerTools.buildLayeredImage {
-            name = "mcp-rust-proxy";
-            tag = "latest";
-            contents = [
-              packages.default
-              pkgs.cacert
-            ];
-            config = {
-              Cmd = [ "${packages.default}/bin/mcp-rust-proxy" ];
-              ExposedPorts = {
-                "3000/tcp" = {};
-                "3001/tcp" = {};
+        packages =
+          packages
+          // crossPackages
+          // {
+            # Docker image
+            docker = pkgs.dockerTools.buildLayeredImage {
+              name = "mcp-rust-proxy";
+              tag = "latest";
+              contents = [
+                packages.default
+                pkgs.cacert
+              ];
+              config = {
+                Cmd = [ "${packages.default}/bin/mcp-rust-proxy" ];
+                ExposedPorts = {
+                  "3000/tcp" = { };
+                  "3001/tcp" = { };
+                };
               };
             };
           };
-        };
 
         # Development shell
         devShells.default = pkgs.mkShell {
           inputsFrom = [ packages.default ];
-          
+
           buildInputs = with pkgs; [
             # Rust development tools
             rustToolchain
@@ -185,25 +225,25 @@
             cargo-audit
             cargo-outdated
             cargo-release
-            
+
             # Web development
             trunk
             wasm-bindgen-cli
             binaryen
-            
+
             # General development tools
             git
             gh
             direnv
             nix-direnv
-            
+
             # Testing tools
             cargo-nextest
             # cargo-llvm-cov # Currently broken in nixpkgs
-            
+
             # For generating flamegraphs
             cargo-flamegraph
-            
+
             # Database tools (for testing MCP servers)
             sqlite
             postgresql
@@ -221,5 +261,6 @@
         apps.default = flake-utils.lib.mkApp {
           drv = packages.default;
         };
-      });
+      }
+    );
 }

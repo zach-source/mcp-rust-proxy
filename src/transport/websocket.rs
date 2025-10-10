@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 pub struct WebSocketTransport {
     url: String,
+    #[allow(dead_code)]
     protocols: Vec<String>,
+    #[allow(dead_code)]
     auto_reconnect: bool,
 }
 
@@ -38,6 +40,7 @@ impl Transport for WebSocketTransport {
 }
 
 pub struct WebSocketConnection {
+    #[allow(dead_code)]
     url: String,
     closed: Arc<AtomicBool>,
 }

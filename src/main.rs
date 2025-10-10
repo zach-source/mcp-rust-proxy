@@ -1,5 +1,6 @@
 use clap::Parser;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info};
 
@@ -25,6 +26,10 @@ struct Args {
     /// Enable debug logging
     #[arg(short, long, global = true)]
     debug: bool,
+
+    /// Run in stdio mode (for use as MCP server with Claude CLI)
+    #[arg(long, global = true)]
+    stdio: bool,
 }
 
 #[derive(Debug, clap::Subcommand)]
@@ -94,24 +99,84 @@ async fn main() -> Result<()> {
             return commands::run_config_check(config, ping).await;
         }
         Command::Run => {
-            // Continue with normal server startup
-            info!("Starting MCP Rust Proxy Server");
-            info!("Loaded {} server configurations", config.servers.len());
-            info!(
-                "Proxy will listen on {}:{}",
-                config.proxy.host, config.proxy.port
-            );
-            if config.web_ui.enabled {
+            // Check if stdio mode is enabled
+            if args.stdio {
+                info!("Starting MCP Rust Proxy in stdio mode");
+                info!("Loaded {} server configurations", config.servers.len());
+                // In stdio mode, run the stdio server instead of HTTP
+                return run_stdio_mode(config).await;
+            } else {
+                // Continue with normal HTTP server startup
+                info!("Starting MCP Rust Proxy Server");
+                info!("Loaded {} server configurations", config.servers.len());
                 info!(
-                    "Web UI will be available on {}:{}",
-                    config.web_ui.host, config.web_ui.port
+                    "Proxy will listen on {}:{}",
+                    config.proxy.host, config.proxy.port
                 );
+                if config.web_ui.enabled {
+                    info!(
+                        "Web UI will be available on {}:{}",
+                        config.web_ui.host, config.web_ui.port
+                    );
+                }
             }
         }
     }
 
     // Initialize application state
-    let (state, shutdown_rx) = AppState::new(config);
+    let (state, shutdown_rx) = AppState::new(config.clone());
+
+    // Initialize context tracker if enabled
+    if config.context_tracing.enabled {
+        info!("Initializing context tracing framework");
+        match mcp_rust_proxy::context::storage::HybridStorage::new(
+            config.context_tracing.sqlite_path.clone(),
+            Some(mcp_rust_proxy::context::storage::CacheConfig {
+                max_entries: config.context_tracing.cache_size,
+                ttl_seconds: config.context_tracing.cache_ttl_seconds,
+                eviction_strategy: mcp_rust_proxy::context::storage::EvictionStrategy::TimeBasedLRU,
+            }),
+        )
+        .await
+        {
+            Ok(storage) => {
+                let storage: Arc<dyn mcp_rust_proxy::context::storage::StorageBackend> =
+                    Arc::new(storage);
+                if let Err(e) = state.initialize_context_tracker(storage.clone()).await {
+                    error!("Failed to initialize context tracker: {}", e);
+                } else {
+                    info!("Context tracing initialized successfully");
+
+                    // Start background retention job
+                    let retention_days = config.context_tracing.retention_days;
+                    let storage_for_cleanup = storage.clone();
+                    tokio::spawn(async move {
+                        let mut interval =
+                            tokio::time::interval(tokio::time::Duration::from_secs(86400)); // Daily
+                        loop {
+                            interval.tick().await;
+                            info!(
+                                "Running context tracing retention policy ({}d)",
+                                retention_days
+                            );
+                            match storage_for_cleanup.cleanup_old_data(retention_days).await {
+                                Ok(deleted) => {
+                                    info!("Retention policy deleted {} old records", deleted);
+                                }
+                                Err(e) => {
+                                    error!("Retention policy failed: {}", e);
+                                }
+                            }
+                        }
+                    });
+                    info!("Background retention job started (runs daily)");
+                }
+            }
+            Err(e) => {
+                error!("Failed to create context storage: {}", e);
+            }
+        }
+    }
 
     // Start server manager
     let server_manager = ServerManager::new(state.clone(), shutdown_rx.resubscribe());
@@ -171,6 +236,174 @@ async fn main() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+async fn run_stdio_mode(config: mcp_rust_proxy::config::Config) -> Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    // Initialize application state
+    let (state, _shutdown_rx) = AppState::new(config.clone());
+
+    // Initialize context tracker if enabled
+    if config.context_tracing.enabled {
+        info!("Initializing context tracing framework");
+        match mcp_rust_proxy::context::storage::HybridStorage::new(
+            config.context_tracing.sqlite_path.clone(),
+            Some(mcp_rust_proxy::context::storage::CacheConfig {
+                max_entries: config.context_tracing.cache_size,
+                ttl_seconds: config.context_tracing.cache_ttl_seconds,
+                eviction_strategy: mcp_rust_proxy::context::storage::EvictionStrategy::TimeBasedLRU,
+            }),
+        )
+        .await
+        {
+            Ok(storage) => {
+                let storage: Arc<dyn mcp_rust_proxy::context::storage::StorageBackend> =
+                    Arc::new(storage);
+                if let Err(e) = state.initialize_context_tracker(storage.clone()).await {
+                    error!("Failed to initialize context tracker: {}", e);
+                } else {
+                    info!("Context tracing initialized successfully");
+
+                    // Start background retention job
+                    let retention_days = config.context_tracing.retention_days;
+                    let storage_for_cleanup = storage.clone();
+                    tokio::spawn(async move {
+                        let mut interval =
+                            tokio::time::interval(tokio::time::Duration::from_secs(86400)); // Daily
+                        loop {
+                            interval.tick().await;
+                            info!(
+                                "Running context tracing retention policy ({}d)",
+                                retention_days
+                            );
+                            match storage_for_cleanup.cleanup_old_data(retention_days).await {
+                                Ok(deleted) => {
+                                    info!("Retention policy deleted {} old records", deleted);
+                                }
+                                Err(e) => {
+                                    error!("Retention policy failed: {}", e);
+                                }
+                            }
+                        }
+                    });
+                    info!("Background retention job started (runs daily)");
+                }
+            }
+            Err(e) => {
+                error!("Failed to create context storage: {}", e);
+            }
+        }
+    }
+
+    // Start server manager in background
+    let server_manager = ServerManager::new(state.clone(), state.shutdown_tx.subscribe());
+    tokio::spawn(async move {
+        if let Err(e) = server_manager.run().await {
+            error!("Server manager error: {}", e);
+        }
+    });
+
+    // Give servers time to start
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+    // Create proxy components
+    let router = std::sync::Arc::new(mcp_rust_proxy::proxy::RequestRouter::new());
+    let handler = std::sync::Arc::new(mcp_rust_proxy::proxy::RequestHandler::new(state.clone()));
+
+    info!("Stdio mode ready - reading from stdin, writing to stdout");
+
+    // Read from stdin, write to stdout
+    let stdin = tokio::io::stdin();
+    let stdout = tokio::io::stdout();
+    let mut reader = BufReader::new(stdin);
+    let mut writer = stdout;
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => {
+                // EOF - client disconnected
+                info!("Stdin closed, shutting down");
+                break;
+            }
+            Ok(_) => {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+
+                // Parse JSON-RPC request
+                match serde_json::from_str::<serde_json::Value>(trimmed) {
+                    Ok(request) => {
+                        // Handle the request
+                        match handler.handle_request(request, router.clone()).await {
+                            Ok(response) => {
+                                // Write response to stdout
+                                let response_json = serde_json::to_string(&response).unwrap();
+                                if let Err(e) = writer.write_all(response_json.as_bytes()).await {
+                                    error!("Failed to write response: {}", e);
+                                    break;
+                                }
+                                if let Err(e) = writer.write_all(b"\n").await {
+                                    error!("Failed to write newline: {}", e);
+                                    break;
+                                }
+                                if let Err(e) = writer.flush().await {
+                                    error!("Failed to flush: {}", e);
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                error!("Error handling request: {}", e);
+                                // Send error response
+                                let error_response = mcp_rust_proxy::proxy::MCPResponse {
+                                    jsonrpc: "2.0".to_string(),
+                                    id: None,
+                                    result: None,
+                                    error: Some(mcp_rust_proxy::proxy::MCPError {
+                                        code: -32603,
+                                        message: e.to_string(),
+                                        data: None,
+                                    }),
+                                };
+                                let response_json = serde_json::to_string(&error_response).unwrap();
+                                let _ = writer.write_all(response_json.as_bytes()).await;
+                                let _ = writer.write_all(b"\n").await;
+                                let _ = writer.flush().await;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Invalid JSON: {}", e);
+                        // Send parse error response
+                        let error_response = mcp_rust_proxy::proxy::MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: None,
+                            result: None,
+                            error: Some(mcp_rust_proxy::proxy::MCPError {
+                                code: -32700,
+                                message: format!("Parse error: {}", e),
+                                data: None,
+                            }),
+                        };
+                        let response_json = serde_json::to_string(&error_response).unwrap();
+                        let _ = writer.write_all(response_json.as_bytes()).await;
+                        let _ = writer.write_all(b"\n").await;
+                        let _ = writer.flush().await;
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Error reading from stdin: {}", e);
+                break;
+            }
+        }
+    }
+
+    info!("Stdio mode exiting");
     Ok(())
 }
 

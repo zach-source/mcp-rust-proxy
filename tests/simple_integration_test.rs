@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod simple_tests {
-    use mcp_rust_proxy::protocol::{
-        mcp, JsonRpcId, JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, JsonRpcV2Message,
-    };
+    use mcp_rust_proxy::protocol::{mcp, JsonRpcId, JsonRpcMessage, JsonRpcV2Message};
     use serde_json::json;
 
     #[test]

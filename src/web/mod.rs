@@ -114,6 +114,7 @@ fn api_key_auth(api_key: String) -> impl Filter<Extract = (), Error = warp::Reje
 
 #[derive(Debug)]
 struct AuthError {
+    #[allow(dead_code)]
     kind: AuthErrorKind,
 }
 

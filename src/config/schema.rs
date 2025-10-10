@@ -11,6 +11,8 @@ pub struct Config {
     pub web_ui: WebUIConfig,
     #[serde(default)]
     pub health_check: HealthCheckConfig,
+    #[serde(default)]
+    pub context_tracing: ContextTracingConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -194,6 +196,88 @@ fn default_http_timeout() -> u64 {
 
 fn default_ws_reconnect() -> bool {
     true
+}
+
+// Context tracing defaults
+fn default_context_tracing_enabled() -> bool {
+    true
+}
+
+fn default_sqlite_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".mcp-proxy")
+        .join("context-tracing.db")
+}
+
+fn default_cache_size() -> usize {
+    10_000
+}
+
+fn default_cache_ttl_seconds() -> i64 {
+    7 * 24 * 60 * 60 // 7 days
+}
+
+fn default_retention_days() -> u32 {
+    90
+}
+
+/// Context tracing configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextTracingConfig {
+    /// Enable context tracing (default: true)
+    #[serde(default = "default_context_tracing_enabled")]
+    pub enabled: bool,
+
+    /// Storage type for context tracing
+    #[serde(default)]
+    pub storage_type: StorageType,
+
+    /// Path to SQLite database file
+    #[serde(default = "default_sqlite_path")]
+    pub sqlite_path: PathBuf,
+
+    /// Maximum cache size (number of items, default: 10000)
+    #[serde(default = "default_cache_size")]
+    pub cache_size: usize,
+
+    /// Cache TTL in seconds (default: 7 days = 604800 seconds)
+    #[serde(default = "default_cache_ttl_seconds")]
+    pub cache_ttl_seconds: i64,
+
+    /// Retention period in days (default: 90)
+    #[serde(default = "default_retention_days")]
+    pub retention_days: u32,
+}
+
+impl Default for ContextTracingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_context_tracing_enabled(),
+            storage_type: StorageType::default(),
+            sqlite_path: default_sqlite_path(),
+            cache_size: default_cache_size(),
+            cache_ttl_seconds: default_cache_ttl_seconds(),
+            retention_days: default_retention_days(),
+        }
+    }
+}
+
+/// Storage backend type
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum StorageType {
+    /// Hybrid DashMap + SQLite storage (recommended)
+    Hybrid,
+    /// SQLite only (no caching)
+    SqliteOnly,
+}
+
+impl Default for StorageType {
+    fn default() -> Self {
+        Self::Hybrid
+    }
 }
 
 impl Config {

@@ -148,3 +148,13 @@ healthCheck:
   maxAttempts: 3  # Try 3 times before marking as unhealthy
   retryIntervalSeconds: 10  # Wait 10 seconds between retry attempts
 
+# AI Context Tracing Configuration
+# Enables LLM agents to track provenance and submit quality feedback
+contextTracing:
+  enabled: true
+  storageType: hybrid  # hybrid (DashMap + SQLite) or sqliteOnly
+  sqlitePath: /Users/ztaylor/.mcp-proxy/context-tracing.db
+  cacheSize: 10000  # Max items in memory cache
+  cacheTtlSeconds: 604800  # 7 days
+  retentionDays: 90  # Delete data older than 90 days
+

@@ -8,16 +8,13 @@ fn main() {
     println!("cargo:rerun-if-changed=yew-ui/style.css");
     println!("cargo:rerun-if-changed=yew-ui/Cargo.toml");
 
-    // Only build in release mode or when explicitly requested
-    let profile = env::var("PROFILE").unwrap_or_default();
+    // Only build when explicitly requested
     let force_build = env::var("BUILD_YEW_UI").unwrap_or_default();
 
-    if profile == "release" || force_build == "1" {
+    if force_build == "1" {
         build_yew_ui();
     } else {
-        println!(
-            "cargo:warning=Skipping Yew UI build in debug mode. Set BUILD_YEW_UI=1 to force build."
-        );
+        println!("cargo:warning=Skipping Yew UI build. Set BUILD_YEW_UI=1 to enable.");
     }
 }
 

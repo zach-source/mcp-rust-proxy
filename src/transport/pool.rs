@@ -68,7 +68,7 @@ impl ConnectionPool {
         // Wait for initialize response
         let response_bytes = conn.recv().await?;
         let response_str = std::str::from_utf8(&response_bytes)
-            .map_err(|e| crate::error::TransportError::InvalidFormat)?;
+            .map_err(|_e| crate::error::TransportError::InvalidFormat)?;
         let response: JsonRpcMessage = serde_json::from_str(response_str.trim())?;
 
         // Verify we got a successful response

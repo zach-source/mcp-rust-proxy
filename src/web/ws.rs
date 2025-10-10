@@ -16,6 +16,7 @@ struct WsMessage {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct WsResponse {
     #[serde(rename = "type")]
     msg_type: String,

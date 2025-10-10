@@ -1,0 +1,104 @@
+{
+  "name": "mcp-proxy-tracing",
+  "displayName": "MCP Proxy with Context Tracing",
+  "version": "1.0.0",
+  "description": "Multi-server MCP proxy with AI context provenance tracking and quality feedback loop. Enables self-aware, self-improving AI through automatic lineage tracking.",
+  "author": "MCP Rust Proxy Contributors",
+  "repository": "https://github.com/zach-source/mcp-rust-proxy",
+  "license": "MIT",
+  "claudeVersion": ">=1.0.0",
+
+  "mcpServers": {
+    "mcp-proxy": {
+      "command": "${PLUGIN_DIR}/target/debug/mcp-rust-proxy",
+      "args": ["--config", "${PLUGIN_DIR}/mcp-proxy-config.yaml", "--stdio"],
+      "description": "MCP Proxy aggregating multiple backend servers with automatic context tracing"
+    }
+  },
+
+  "commands": [
+    {
+      "name": "mcp-proxy:give-feedback",
+      "file": "commands/mcp-proxy-give-feedback.md"
+    },
+    {
+      "name": "mcp-proxy:show-trace",
+      "file": "commands/mcp-proxy-show-trace.md"
+    },
+    {
+      "name": "mcp-proxy:quality-report",
+      "file": "commands/mcp-proxy-quality-report.md"
+    },
+    {
+      "name": "mcp-proxy:start-session",
+      "file": "commands/mcp-proxy-start-session.md"
+    },
+    {
+      "name": "mcp-proxy:end-session",
+      "file": "commands/mcp-proxy-end-session.md"
+    }
+  ],
+
+  "hooks": {
+    "sessionStart": [
+      {
+        "description": "Initialize context tracing session",
+        "command": "${PLUGIN_DIR}/.claude/hooks/session-start.sh"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "description": "Prompt for session feedback",
+        "command": "${PLUGIN_DIR}/.claude/hooks/session-end.sh"
+      }
+    ],
+    "postToolUse": [
+      {
+        "description": "Record response_id after MCP tool calls",
+        "matchers": [
+          {
+            "tool": "mcp__proxy__*"
+          }
+        ],
+        "command": "${PLUGIN_DIR}/.claude/hooks/post-tool-use.sh",
+        "excludeTools": ["mcp__proxy__tracing__*"]
+      }
+    ]
+  },
+
+  "settings": {
+    "contextTracing": {
+      "enabled": true,
+      "autoNotifications": true,
+      "feedbackPrompts": true,
+      "sessionTracking": true
+    }
+  },
+
+  "readme": "README.md",
+  "changelog": "CHANGELOG.md",
+
+  "keywords": [
+    "mcp",
+    "proxy",
+    "context-tracing",
+    "provenance",
+    "self-improvement",
+    "quality-feedback",
+    "lineage",
+    "multi-server",
+    "aggregation"
+  ],
+
+  "features": [
+    "Multi-server MCP aggregation",
+    "Automatic context provenance tracking",
+    "Quality feedback loop with score propagation",
+    "Self-aware AI - query own lineage",
+    "Session management and analytics",
+    "10 tracing tools + 4 quality resources",
+    "Hybrid storage (DashMap + SQLite)",
+    "Background retention policy",
+    "Tool name prefixing to prevent conflicts"
+  ]
+}

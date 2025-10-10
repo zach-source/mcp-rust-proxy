@@ -1,5 +1,6 @@
 use crate::server::ServerManager;
 use crate::state::AppState;
+use chrono::DateTime;
 use futures::stream;
 use futures::stream::{Stream, StreamExt};
 use std::path::PathBuf;
@@ -22,9 +23,12 @@ pub fn routes(
     let metrics = metrics_route(state.clone());
 
     // Config endpoint
-    let config = config_routes(state);
+    let config = config_routes(state.clone());
 
-    warp::path("api").and(servers.or(logs).or(metrics).or(config))
+    // Context tracing endpoints
+    let trace = trace_routes(state);
+
+    warp::path("api").and(servers.or(logs).or(metrics).or(config).or(trace))
 }
 
 fn servers_routes(
@@ -90,6 +94,45 @@ fn config_routes(
         .and_then(update_config);
 
     get.or(update)
+}
+
+fn trace_routes(
+    state: Arc<AppState>,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    let get_trace_route = warp::path!("trace" / String)
+        .and(warp::get())
+        .and(warp::query::<std::collections::HashMap<String, String>>())
+        .and(with_state(state.clone()))
+        .and_then(get_trace);
+
+    let by_context_route = warp::path!("query" / "by-context" / String)
+        .and(warp::get())
+        .and(warp::query::<std::collections::HashMap<String, String>>())
+        .and(with_state(state.clone()))
+        .and_then(get_context_impact);
+
+    let by_response_route = warp::path!("query" / "by-response" / String / "contexts")
+        .and(warp::get())
+        .and(warp::query::<std::collections::HashMap<String, String>>())
+        .and(with_state(state.clone()))
+        .and_then(get_response_contexts);
+
+    let evolution_route = warp::path!("query" / "evolution" / String)
+        .and(warp::get())
+        .and(with_state(state.clone()))
+        .and_then(get_evolution_history);
+
+    let feedback_route = warp::path!("feedback")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(with_state(state))
+        .and_then(submit_feedback);
+
+    get_trace_route
+        .or(by_context_route)
+        .or(by_response_route)
+        .or(evolution_route)
+        .or(feedback_route)
 }
 
 fn with_state(
@@ -456,6 +499,7 @@ async fn stream_server_logs(
 #[derive(Debug)]
 enum LogStreamError {
     HomeDirectoryNotFound,
+    #[allow(dead_code)]
     LogFileNotFound(String),
 }
 
@@ -528,4 +572,255 @@ fn create_log_stream(
             }
         },
     )
+}
+
+// ========== Context Tracing Handlers ==========
+
+async fn get_trace(
+    response_id: String,
+    query_params: std::collections::HashMap<String, String>,
+    state: Arc<AppState>,
+) -> Result<impl Reply, Rejection> {
+    use crate::context::query::{format_manifest, OutputFormat};
+
+    // Get format parameter (default: json)
+    let format_str = query_params
+        .get("format")
+        .map(|s| s.as_str())
+        .unwrap_or("json");
+    let format = OutputFormat::from_str(format_str).unwrap_or(OutputFormat::Json);
+
+    // Query storage for lineage manifest
+    match &*state.context_tracker.read().await {
+        Some(tracker) => {
+            let storage = tracker.storage();
+            match storage.query_lineage(&response_id).await {
+                Ok(Some(manifest)) => {
+                    // Format according to requested format
+                    match format_manifest(&manifest, format) {
+                        Ok(formatted) => {
+                            // Return appropriate content type
+                            let content_type = match format {
+                                OutputFormat::Json => "application/json",
+                                OutputFormat::Tree | OutputFormat::Compact => "text/plain",
+                            };
+
+                            Ok(warp::reply::with_header(
+                                formatted,
+                                "Content-Type",
+                                content_type,
+                            ))
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to format manifest: {}", e);
+                            Err(warp::reject::not_found())
+                        }
+                    }
+                }
+                Ok(None) => {
+                    // Response not found
+                    Err(warp::reject::not_found())
+                }
+                Err(e) => {
+                    tracing::error!("Failed to query lineage: {}", e);
+                    Err(warp::reject::not_found())
+                }
+            }
+        }
+        None => {
+            // Context tracing not enabled
+            tracing::warn!("Context tracing is not enabled");
+            Err(warp::reject::not_found())
+        }
+    }
+}
+
+async fn get_context_impact(
+    context_unit_id: String,
+    query_params: std::collections::HashMap<String, String>,
+    state: Arc<AppState>,
+) -> Result<impl Reply, Rejection> {
+    use crate::context::query::{QueryFilters, QueryService};
+
+    match &*state.context_tracker.read().await {
+        Some(tracker) => {
+            let storage = tracker.storage();
+            let query_service = QueryService::new(storage);
+
+            // Parse query parameters
+            let filters = QueryFilters {
+                min_weight: query_params.get("min_weight").and_then(|s| s.parse().ok()),
+                start_date: query_params
+                    .get("start_date")
+                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc)),
+                end_date: query_params
+                    .get("end_date")
+                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc)),
+                context_type: None,
+                limit: query_params.get("limit").and_then(|s| s.parse().ok()),
+            };
+
+            match query_service
+                .query_responses_by_context(&context_unit_id, Some(filters))
+                .await
+            {
+                Ok(report) => {
+                    let json =
+                        serde_json::to_string(&report).map_err(|_| warp::reject::not_found())?;
+                    Ok(warp::reply::with_header(
+                        json,
+                        "Content-Type",
+                        "application/json",
+                    ))
+                }
+                Err(e) => {
+                    tracing::error!("Failed to query context impact: {}", e);
+                    Err(warp::reject::not_found())
+                }
+            }
+        }
+        None => {
+            tracing::warn!("Context tracing is not enabled");
+            Err(warp::reject::not_found())
+        }
+    }
+}
+
+async fn get_response_contexts(
+    response_id: String,
+    query_params: std::collections::HashMap<String, String>,
+    state: Arc<AppState>,
+) -> Result<impl Reply, Rejection> {
+    use crate::context::query::QueryService;
+    use crate::context::types::ContextType;
+
+    match &*state.context_tracker.read().await {
+        Some(tracker) => {
+            let storage = tracker.storage();
+            let query_service = QueryService::new(storage);
+
+            // Parse type filter if provided
+            let type_filter = query_params.get("type").and_then(|s| match s.as_str() {
+                "System" => Some(ContextType::System),
+                "User" => Some(ContextType::User),
+                "External" => Some(ContextType::External),
+                "ModelState" => Some(ContextType::ModelState),
+                _ => None,
+            });
+
+            match query_service
+                .query_contexts_by_response(&response_id, type_filter)
+                .await
+            {
+                Ok(contexts) => {
+                    let json =
+                        serde_json::to_string(&contexts).map_err(|_| warp::reject::not_found())?;
+                    Ok(warp::reply::with_header(
+                        json,
+                        "Content-Type",
+                        "application/json",
+                    ))
+                }
+                Err(e) => {
+                    tracing::error!("Failed to query response contexts: {}", e);
+                    Err(warp::reject::not_found())
+                }
+            }
+        }
+        None => {
+            tracing::warn!("Context tracing is not enabled");
+            Err(warp::reject::not_found())
+        }
+    }
+}
+
+async fn get_evolution_history(
+    context_unit_id: String,
+    state: Arc<AppState>,
+) -> Result<impl Reply, Rejection> {
+    use crate::context::evolution::EvolutionService;
+
+    match &*state.context_tracker.read().await {
+        Some(tracker) => {
+            let storage = tracker.storage();
+            let evolution_service = EvolutionService::new(storage);
+
+            match evolution_service
+                .get_version_history(&context_unit_id)
+                .await
+            {
+                Ok(history) => {
+                    let json =
+                        serde_json::to_string(&history).map_err(|_| warp::reject::not_found())?;
+                    Ok(warp::reply::with_header(
+                        json,
+                        "Content-Type",
+                        "application/json",
+                    ))
+                }
+                Err(e) => {
+                    tracing::error!("Failed to get evolution history: {}", e);
+                    Err(warp::reject::not_found())
+                }
+            }
+        }
+        None => {
+            tracing::warn!("Context tracing is not enabled");
+            Err(warp::reject::not_found())
+        }
+    }
+}
+
+async fn submit_feedback(
+    submission: crate::context::types::FeedbackSubmission,
+    state: Arc<AppState>,
+) -> Result<impl Reply, Rejection> {
+    match &*state.context_tracker.read().await {
+        Some(tracker) => {
+            // Validate score range
+            if submission.score < -1.0 || submission.score > 1.0 {
+                tracing::warn!("Invalid feedback score: {}", submission.score);
+                return Err(warp::reject::not_found()); // TODO: Return 400 Bad Request
+            }
+
+            // Record feedback and propagate to contexts
+            match tracker
+                .record_feedback(
+                    &submission.response_id,
+                    submission.score,
+                    submission.feedback_text.clone(),
+                    submission.user_id.clone(),
+                )
+                .await
+            {
+                Ok(propagation_status) => {
+                    // Return success with propagation status
+                    let response_body = serde_json::json!({
+                        "status": "success",
+                        "response_id": submission.response_id,
+                        "score": submission.score,
+                        "propagation": propagation_status
+                    });
+
+                    let json = serde_json::to_string(&response_body)
+                        .map_err(|_| warp::reject::not_found())?;
+
+                    Ok(warp::reply::with_status(
+                        warp::reply::with_header(json, "Content-Type", "application/json"),
+                        warp::http::StatusCode::CREATED,
+                    ))
+                }
+                Err(e) => {
+                    tracing::error!("Failed to record feedback: {}", e);
+                    Err(warp::reject::not_found())
+                }
+            }
+        }
+        None => {
+            tracing::warn!("Context tracing is not enabled");
+            Err(warp::reject::not_found())
+        }
+    }
 }

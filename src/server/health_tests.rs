@@ -155,6 +155,7 @@ mod tests {
                 retry_interval_seconds: 1,
             },
             servers: std::collections::HashMap::new(),
+            context_tracing: Default::default(),
         }
     }
 

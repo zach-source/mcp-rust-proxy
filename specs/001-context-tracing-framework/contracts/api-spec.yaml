@@ -1,0 +1,612 @@
+openapi: 3.0.3
+info:
+  title: Context Tracing Framework API
+  description: API for tracing AI response provenance and evolution within MCP Rust Proxy
+  version: 1.0.0
+  contact:
+    name: MCP Rust Proxy Contributors
+
+servers:
+  - url: http://localhost:3001/api
+    description: Local development server
+
+tags:
+  - name: trace
+    description: Response trace retrieval operations
+  - name: query
+    description: Context impact and lineage queries
+  - name: feedback
+    description: Response quality feedback
+
+paths:
+  /trace/{response_id}:
+    get:
+      summary: Retrieve trace information for a specific response
+      description: Returns the complete lineage manifest showing all context units that contributed to a response
+      operationId: getResponseTrace
+      tags:
+        - trace
+      parameters:
+        - name: response_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^resp_[a-zA-Z0-9_]+$'
+          description: Unique response identifier
+          example: "resp_20251009_00123"
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, tree, compact]
+            default: json
+          description: Output format (json=full manifest, tree=hierarchical view, compact=summary)
+      responses:
+        '200':
+          description: Trace information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageManifest'
+              examples:
+                full_manifest:
+                  summary: Full lineage manifest
+                  value:
+                    response_id: "resp_20251009_00123"
+                    timestamp: "2025-10-09T16:15:00Z"
+                    agent: "claude-sdk:lazy-broker"
+                    model: "claude-3.5-sonnet"
+                    token_count: 1984
+                    context_tree:
+                      - id: "cu_argo_appset_001"
+                        type: "User"
+                        source: "memory:project/ripple"
+                        weight: 0.42
+                        embedding_id: "vec_3928a"
+                        summary: "ArgoCD AppSets with SCM filtering"
+                      - id: "cu_values_yaml_002"
+                        type: "User"
+                        source: "file:argocd/values.yaml"
+                        weight: 0.31
+                        embedding_id: "vec_4821b"
+                        summary: "Helm values configuration"
+                      - id: "cu_docs_mcp_003"
+                        type: "External"
+                        source: "tool:docs_mcp"
+                        weight: 0.27
+                        embedding_id: null
+                        summary: "ArgoCD documentation query"
+                    provenance_tree:
+                      root: "resp_20251009_00123"
+                      edges:
+                        - from: "cu_argo_appset_001"
+                          to: "resp_20251009_00123"
+                          weight: 0.42
+                        - from: "cu_values_yaml_002"
+                          to: "resp_20251009_00123"
+                          weight: 0.31
+                        - from: "cu_docs_mcp_003"
+                          to: "resp_20251009_00123"
+                          weight: 0.27
+        '404':
+          description: Response not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Response not found"
+                response_id: "resp_invalid_123"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /query/by-context/{context_unit_id}:
+    get:
+      summary: Find all responses influenced by a specific context unit
+      description: Returns all responses that used the given context unit, ordered by contribution weight
+      operationId: queryResponsesByContext
+      tags:
+        - query
+      parameters:
+        - name: context_unit_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^cu_[a-zA-Z0-9_]+$'
+          description: Unique context unit identifier
+          example: "cu_argo_appset_001"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+          description: Maximum number of responses to return
+        - name: min_weight
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: 0.0
+            maximum: 1.0
+            default: 0.0
+          description: Minimum contribution weight threshold
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Filter responses after this timestamp
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Filter responses before this timestamp
+      responses:
+        '200':
+          description: Query executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContextImpactReport'
+              example:
+                context_unit_id: "cu_argo_appset_001"
+                total_responses: 42
+                avg_weight: 0.38
+                responses:
+                  - response_id: "resp_20251009_00123"
+                    timestamp: "2025-10-09T16:15:00Z"
+                    weight: 0.42
+                    agent: "claude-sdk:lazy-broker"
+                  - response_id: "resp_20251009_00089"
+                    timestamp: "2025-10-09T14:22:00Z"
+                    weight: 0.35
+                    agent: "claude-sdk:lazy-broker"
+        '404':
+          description: Context unit not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /query/by-response/{response_id}/contexts:
+    get:
+      summary: Get all context units that contributed to a response
+      description: Returns context units used in generating a specific response, ordered by weight
+      operationId: queryContextsByResponse
+      tags:
+        - query
+      parameters:
+        - name: response_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^resp_[a-zA-Z0-9_]+$'
+          description: Unique response identifier
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [System, User, External, ModelState]
+          description: Filter by context type
+      responses:
+        '200':
+          description: Contexts retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response_id:
+                    type: string
+                  contexts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContextTreeNode'
+              example:
+                response_id: "resp_20251009_00123"
+                contexts:
+                  - id: "cu_argo_appset_001"
+                    type: "User"
+                    source: "memory:project/ripple"
+                    weight: 0.42
+                    summary: "ArgoCD AppSets with SCM filtering"
+        '404':
+          description: Response not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /query/evolution/{context_unit_id}:
+    get:
+      summary: Track evolution of a context unit over time
+      description: Returns version history showing how a context unit has changed
+      operationId: queryContextEvolution
+      tags:
+        - query
+      parameters:
+        - name: context_unit_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Context unit identifier (any version)
+      responses:
+        '200':
+          description: Evolution history retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvolutionHistory'
+              example:
+                current_version:
+                  id: "cu_argo_appset_003"
+                  version: 3
+                  timestamp: "2025-10-09T16:00:00Z"
+                  summary: "ArgoCD AppSets with updated SCM filtering"
+                history:
+                  - id: "cu_argo_appset_002"
+                    version: 2
+                    timestamp: "2025-10-08T10:30:00Z"
+                    summary: "ArgoCD AppSets with SCM filtering (updated)"
+                  - id: "cu_argo_appset_001"
+                    version: 1
+                    timestamp: "2025-10-07T14:15:00Z"
+                    summary: "ArgoCD AppSets with SCM filtering"
+        '404':
+          description: Context unit not found
+
+  /feedback:
+    post:
+      summary: Submit feedback for a response
+      description: Provide quality rating that propagates to contributing context units
+      operationId: submitFeedback
+      tags:
+        - feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackSubmission'
+            example:
+              response_id: "resp_20251009_00123"
+              score: 0.8
+              feedback_text: "Accurate and helpful response"
+              user_id: "user_42"
+      responses:
+        '201':
+          description: Feedback recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackRecord'
+              example:
+                id: "fb_20251009_001"
+                response_id: "resp_20251009_00123"
+                timestamp: "2025-10-09T17:00:00Z"
+                score: 0.8
+                feedback_text: "Accurate and helpful response"
+                user_id: "user_42"
+                propagation_status:
+                  contexts_updated: 3
+                  avg_score_change: 0.15
+        '400':
+          description: Invalid feedback data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Response not found
+
+  /stats/context-quality:
+    get:
+      summary: Get aggregate quality metrics for context units
+      description: Returns quality scores and usage statistics for context units
+      operationId: getContextQualityStats
+      tags:
+        - query
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [System, User, External, ModelState]
+          description: Filter by context type
+        - name: min_score
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: -1.0
+            maximum: 1.0
+          description: Minimum quality score threshold
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Number of results to return
+      responses:
+        '200':
+          description: Statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_contexts:
+                    type: integer
+                  avg_score:
+                    type: number
+                    format: float
+                  contexts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        type:
+                          type: string
+                        source:
+                          type: string
+                        aggregate_score:
+                          type: number
+                          format: float
+                        feedback_count:
+                          type: integer
+                        usage_count:
+                          type: integer
+              example:
+                total_contexts: 156
+                avg_score: 0.42
+                contexts:
+                  - id: "cu_argo_appset_001"
+                    type: "User"
+                    source: "memory:project/ripple"
+                    aggregate_score: 0.75
+                    feedback_count: 28
+                    usage_count: 42
+
+components:
+  schemas:
+    LineageManifest:
+      type: object
+      required:
+        - response_id
+        - timestamp
+        - agent
+        - model
+        - context_tree
+        - provenance_tree
+      properties:
+        response_id:
+          type: string
+          pattern: '^resp_[a-zA-Z0-9_]+$'
+        timestamp:
+          type: string
+          format: date-time
+        agent:
+          type: string
+        model:
+          type: string
+        token_count:
+          type: integer
+          nullable: true
+        context_tree:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContextTreeNode'
+        provenance_tree:
+          $ref: '#/components/schemas/ProvenanceTree'
+
+    ContextTreeNode:
+      type: object
+      required:
+        - id
+        - type
+        - source
+        - weight
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [System, User, External, ModelState]
+        source:
+          type: string
+        weight:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+        embedding_id:
+          type: string
+          nullable: true
+        summary:
+          type: string
+          nullable: true
+
+    ProvenanceTree:
+      type: object
+      required:
+        - root
+        - edges
+      properties:
+        root:
+          type: string
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProvenanceEdge'
+
+    ProvenanceEdge:
+      type: object
+      required:
+        - from
+        - to
+        - weight
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        weight:
+          type: number
+          format: float
+
+    ContextImpactReport:
+      type: object
+      required:
+        - context_unit_id
+        - total_responses
+        - avg_weight
+        - responses
+      properties:
+        context_unit_id:
+          type: string
+        total_responses:
+          type: integer
+        avg_weight:
+          type: number
+          format: float
+        responses:
+          type: array
+          items:
+            type: object
+            properties:
+              response_id:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+              weight:
+                type: number
+                format: float
+              agent:
+                type: string
+
+    EvolutionHistory:
+      type: object
+      required:
+        - current_version
+        - history
+      properties:
+        current_version:
+          $ref: '#/components/schemas/ContextVersion'
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContextVersion'
+
+    ContextVersion:
+      type: object
+      required:
+        - id
+        - version
+        - timestamp
+      properties:
+        id:
+          type: string
+        version:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+        summary:
+          type: string
+          nullable: true
+
+    FeedbackSubmission:
+      type: object
+      required:
+        - response_id
+        - score
+      properties:
+        response_id:
+          type: string
+          pattern: '^resp_[a-zA-Z0-9_]+$'
+        score:
+          type: number
+          format: float
+          minimum: -1.0
+          maximum: 1.0
+        feedback_text:
+          type: string
+          maxLength: 1000
+        user_id:
+          type: string
+          maxLength: 100
+
+    FeedbackRecord:
+      type: object
+      required:
+        - id
+        - response_id
+        - timestamp
+        - score
+      properties:
+        id:
+          type: string
+        response_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        score:
+          type: number
+          format: float
+        feedback_text:
+          type: string
+          nullable: true
+        user_id:
+          type: string
+          nullable: true
+        propagation_status:
+          type: object
+          properties:
+            contexts_updated:
+              type: integer
+            avg_score_change:
+              type: number
+              format: float
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        details:
+          type: object
+          additionalProperties: true

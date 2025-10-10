@@ -3,7 +3,6 @@ use crate::error::Result;
 use crate::logging::ServerLogger;
 use crate::state::{AppState, ServerInfo, ServerState};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 pub struct ServerManager {
     state: Arc<AppState>,

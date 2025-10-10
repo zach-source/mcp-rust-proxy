@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::context::tracker::ContextTracker;
 use crate::error::Result;
 use crate::logging::ServerLogger;
 use crate::transport::pool::ConnectionPool;
@@ -29,6 +30,7 @@ pub struct AppState {
     pub metrics: Arc<Metrics>,
     pub connection_pool: Arc<ConnectionPool>,
     pub shutdown_tx: tokio::sync::broadcast::Sender<()>,
+    pub context_tracker: Arc<RwLock<Option<Arc<ContextTracker>>>>,
 }
 
 #[derive(Clone)]
@@ -68,9 +70,30 @@ impl AppState {
             metrics: Arc::new(Metrics::new()),
             connection_pool: Arc::new(ConnectionPool::new()),
             shutdown_tx,
+            context_tracker: Arc::new(RwLock::new(None)),
         });
 
         (state, shutdown_rx)
+    }
+
+    /// Initialize context tracker with storage backend
+    ///
+    /// This should be called during application startup if context tracing is enabled.
+    ///
+    /// # Arguments
+    /// * `storage` - Storage backend for context tracing
+    ///
+    /// # Returns
+    /// * `Ok(())` if initialized successfully
+    /// * `Err(_)` if initialization fails
+    pub async fn initialize_context_tracker(
+        &self,
+        storage: Arc<dyn crate::context::storage::StorageBackend>,
+    ) -> Result<()> {
+        let tracker = Arc::new(ContextTracker::new(storage));
+        let mut context_tracker = self.context_tracker.write().await;
+        *context_tracker = Some(tracker);
+        Ok(())
     }
 
     pub async fn update_config(&self, new_config: Config) -> Result<()> {

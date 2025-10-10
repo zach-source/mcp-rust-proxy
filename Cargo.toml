@@ -69,6 +69,9 @@ tokio-tungstenite = "0.24"
 # Metrics
 prometheus = "0.13"
 
+# Context tracing - SQLite storage
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
 mockall = "0.13"

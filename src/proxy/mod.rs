@@ -6,6 +6,7 @@ use warp::Filter;
 
 pub mod handler;
 pub mod router;
+pub mod tracing_tools;
 
 pub use handler::RequestHandler;
 pub use router::RequestRouter;
