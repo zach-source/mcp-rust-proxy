@@ -17,3 +17,8 @@ result-*
 
 # Cachix
 cachix-key.secret
+
+# Plugin dependencies
+examples/plugins/node_modules/
+tests/fixtures/plugins/node_modules/
+**/plugins/node_modules/

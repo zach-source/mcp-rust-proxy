@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mcpRustProxy": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "cd /Users/ztaylor/repos/workspaces/mcp-rust-proxy/main && nix develop --command bash -c 'unset RUSTFLAGS && cargo run -- --config mcp-proxy-config.yaml --stdio'"
+      ],
+      "env": {}
+    }
+  }
+}

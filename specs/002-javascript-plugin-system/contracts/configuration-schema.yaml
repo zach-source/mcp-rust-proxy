@@ -1,0 +1,197 @@
+# Plugin Configuration Schema
+# Extends existing mcp-proxy-config.yaml with plugin support
+
+# JSON Schema for YAML configuration
+$schema: http://json-schema.org/draft-07/schema#
+title: MCP Proxy Configuration with Plugins
+type: object
+
+properties:
+  servers:
+    type: object
+    description: MCP server configurations
+    additionalProperties:
+      type: object
+      properties:
+        # ... existing server config fields (transport, command, args, env) ...
+
+        # NEW: Plugin configuration
+        plugins:
+          type: object
+          description: Plugin settings for this server
+          properties:
+            enabled:
+              type: boolean
+              description: Enable plugin system for this server
+              default: true
+
+            pool_size:
+              type: integer
+              description: Number of Node.js processes per plugin
+              minimum: 1
+              maximum: 20
+              default: 5
+
+            global_timeout_ms:
+              type: integer
+              description: Override timeout for all plugins (milliseconds)
+              minimum: 1000
+              maximum: 300000
+              default: 30000
+
+            tool_patterns:
+              type: array
+              description: Filter plugins by tool name patterns
+              items:
+                type: object
+                properties:
+                  pattern:
+                    type: string
+                    description: Regex pattern to match tool names
+                  plugins:
+                    type: array
+                    description: Plugins to apply for matching tools
+                    items:
+                      type: string
+                      description: Plugin name reference
+
+            request_phase:
+              type: array
+              description: Plugins to execute before forwarding request
+              items:
+                $ref: '#/definitions/PluginConfig'
+
+            response_phase:
+              type: array
+              description: Plugins to execute after receiving response
+              items:
+                $ref: '#/definitions/PluginConfig'
+
+  # NEW: Global plugin settings
+  plugin_settings:
+    type: object
+    description: Global plugin configuration
+    properties:
+      plugin_directory:
+        type: string
+        description: Directory containing plugin files
+        default: "./plugins"
+
+      node_executable:
+        type: string
+        description: Path to Node.js executable
+        default: "node"
+
+      default_timeout_ms:
+        type: integer
+        description: Default timeout for all plugins
+        minimum: 1000
+        maximum: 300000
+        default: 30000
+
+      max_concurrent_executions:
+        type: integer
+        description: Maximum concurrent plugin executions across all servers
+        minimum: 1
+        default: 100
+
+      enable_metrics:
+        type: boolean
+        description: Enable plugin execution metrics
+        default: true
+
+      log_directory:
+        type: string
+        description: Directory for plugin logs
+        default: "~/.mcp-proxy/logs/plugins"
+
+definitions:
+  PluginConfig:
+    type: object
+    required: [name, path]
+    properties:
+      name:
+        type: string
+        description: Plugin identifier
+        pattern: '^[a-zA-Z0-9_-]+$'
+
+      path:
+        type: string
+        description: Path to plugin JavaScript file (relative to plugin_directory)
+
+      enabled:
+        type: boolean
+        description: Enable this plugin
+        default: true
+
+      timeout_ms:
+        type: integer
+        description: Timeout for this plugin (overrides global)
+        minimum: 1000
+        maximum: 300000
+
+      order:
+        type: integer
+        description: Execution order (lower runs first)
+        minimum: 0
+        default: 0
+
+      config:
+        type: object
+        description: Plugin-specific configuration (passed to plugin)
+        additionalProperties: true
+
+---
+# Example Configuration
+
+servers:
+  context7:
+    transport: http-sse
+    url: "https://api.context7.dev"
+
+    plugins:
+      enabled: true
+      pool_size: 3
+
+      response_phase:
+        - name: curate
+          path: examples/curate.js
+          timeout_ms: 10000
+          order: 0
+          config:
+            maxTokens: 1200
+            preserveCodeExamples: true
+
+  filesystem:
+    transport: stdio
+    command: "npx"
+    args: ["@modelcontextprotocol/server-filesystem", "/Users/me/projects"]
+
+    plugins:
+      enabled: true
+
+      request_phase:
+        - name: security-check
+          path: examples/security-validator.js
+          timeout_ms: 5000
+          order: 0
+          config:
+            allowedPaths: ["/Users/me/projects"]
+            blockedPatterns: ["*.env", "credentials.json"]
+
+  github:
+    transport: stdio
+    command: "npx"
+    args: ["@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+    plugins:
+      enabled: false  # No plugins for this server
+
+plugin_settings:
+  plugin_directory: "./plugins"
+  node_executable: "node"
+  default_timeout_ms: 30000
+  max_concurrent_executions: 50
+  enable_metrics: true

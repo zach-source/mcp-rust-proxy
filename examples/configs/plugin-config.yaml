@@ -1,0 +1,31 @@
+# Example Plugin Configuration for MCP Rust Proxy
+#
+# This configuration demonstrates how to set up JavaScript plugins
+# for different MCP servers.
+
+# Global plugin settings
+plugins:
+  # Directory containing plugin .js files
+  pluginDir: ./examples/plugins
+
+  # Path to Node.js executable (default: "node")
+  nodeExecutable: node
+
+  # Maximum concurrent plugin executions (global semaphore)
+  maxConcurrentExecutions: 10
+
+  # Number of warm processes to maintain per plugin
+  poolSizePerPlugin: 5
+
+  # Default timeout for plugin execution (milliseconds)
+  defaultTimeoutMs: 30000
+
+  # Server-specific plugin assignments
+  servers:
+    # Example: Configure curation plugin for context7 server
+    context7:
+      response:
+        - name: curation-plugin
+          order: 1
+          enabled: true
+          timeoutMs: 45000  # Longer timeout for AI processing
