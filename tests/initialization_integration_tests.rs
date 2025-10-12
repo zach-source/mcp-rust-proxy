@@ -1,6 +1,8 @@
 use mcp_rust_proxy::protocol::{ProtocolVersion, ServerConnectionState};
 use serde_json::json;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 
 /// Mock MCP server for testing initialization sequence
 struct MockMcpServer {
@@ -678,4 +680,246 @@ async fn t026_multiple_slow_servers() {
 
         assert!(state.is_ready().await);
     }
+}
+
+// ============================================================================
+// T028: Concurrent Client Tests
+// ============================================================================
+
+/// T028 Test Case 1: 10 clients send tools/list simultaneously while server initializing
+#[tokio::test]
+async fn t028_concurrent_clients_during_initialization() {
+    use mcp_rust_proxy::proxy::router::{QueuedRequest, RequestRouter};
+
+    let router = Arc::new(RequestRouter::new());
+    let state = Arc::new(ServerConnectionState::new(
+        "concurrent-test-server".to_string(),
+    ));
+    let server_name = "concurrent-test-server";
+
+    // Start initialization
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+
+    // Spawn 10 concurrent clients trying to send tools/list
+    let mut handles = vec![];
+
+    for i in 0..10 {
+        let router_clone = Arc::clone(&router);
+        let state_clone = Arc::clone(&state);
+        let server_name = server_name.to_string();
+
+        let handle = tokio::spawn(async move {
+            // Check if server is ready
+            if !state_clone.can_send_request("tools/list").await {
+                // Queue the request
+                let (tx, _rx) = tokio::sync::oneshot::channel();
+                let request = QueuedRequest {
+                    request_id: format!("req-{}", i),
+                    method: "tools/list".to_string(),
+                    params: None,
+                    response_tx: Arc::new(Mutex::new(Some(tx))),
+                };
+
+                router_clone.queue_request(&server_name, request).await;
+                (i, true) // Successfully queued
+            } else {
+                (i, false) // Server was ready (shouldn't happen in this test)
+            }
+        });
+
+        handles.push(handle);
+    }
+
+    // Wait for all clients to queue their requests
+    let results = futures::future::join_all(handles).await;
+
+    // Verify all requests were queued
+    let queued_count = results.iter().filter(|r| r.as_ref().unwrap().1).count();
+    assert_eq!(queued_count, 10, "All 10 requests should be queued");
+
+    // Verify queue size
+    let queue_size = router.queued_request_count(server_name).await;
+    assert_eq!(queue_size, 10, "Queue should contain 10 requests");
+
+    // Now complete initialization
+    state
+        .received_initialize_response(ProtocolVersion::V20250618)
+        .await
+        .unwrap();
+    state.complete_initialization().await.unwrap();
+
+    // Process queued requests
+    let queued_requests = router.process_queued_requests(server_name).await;
+    assert_eq!(
+        queued_requests.len(),
+        10,
+        "Should process 10 queued requests"
+    );
+
+    // Queue should now be empty
+    let final_queue_size = router.queued_request_count(server_name).await;
+    assert_eq!(
+        final_queue_size, 0,
+        "Queue should be empty after processing"
+    );
+}
+
+/// T028 Test Case 2: All requests processed after initialization
+#[tokio::test]
+async fn t028_all_requests_processed_after_init() {
+    use mcp_rust_proxy::proxy::router::{QueuedRequest, RequestRouter};
+
+    let router = Arc::new(RequestRouter::new());
+    let server_name = "processing-test-server";
+
+    // Queue multiple requests
+    for i in 0..5 {
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        let request = QueuedRequest {
+            request_id: format!("req-{}", i),
+            method: "tools/list".to_string(),
+            params: None,
+            response_tx: Arc::new(Mutex::new(Some(tx))),
+        };
+        router.queue_request(server_name, request).await;
+    }
+
+    // Verify all queued
+    assert_eq!(router.queued_request_count(server_name).await, 5);
+
+    // Process queue
+    let processed = router.process_queued_requests(server_name).await;
+
+    assert_eq!(processed.len(), 5, "Should process all 5 requests");
+    assert_eq!(
+        router.queued_request_count(server_name).await,
+        0,
+        "Queue should be empty"
+    );
+
+    // Verify each request has correct data
+    for (i, req) in processed.iter().enumerate() {
+        assert_eq!(req.request_id, format!("req-{}", i));
+        assert_eq!(req.method, "tools/list");
+    }
+}
+
+/// T028 Test Case 3: No race conditions with concurrent queueing
+#[tokio::test]
+async fn t028_no_race_conditions() {
+    use mcp_rust_proxy::proxy::router::{QueuedRequest, RequestRouter};
+
+    let router = Arc::new(RequestRouter::new());
+    let server_name = "race-test-server";
+
+    // Spawn 100 concurrent tasks that all queue requests
+    let mut handles = vec![];
+
+    for i in 0..100 {
+        let router_clone = Arc::clone(&router);
+        let server_name = server_name.to_string();
+
+        let handle = tokio::spawn(async move {
+            let (tx, _rx) = tokio::sync::oneshot::channel();
+            let request = QueuedRequest {
+                request_id: format!("req-{}", i),
+                method: "tools/list".to_string(),
+                params: None,
+                response_tx: Arc::new(Mutex::new(Some(tx))),
+            };
+
+            router_clone.queue_request(&server_name, request).await;
+        });
+
+        handles.push(handle);
+    }
+
+    // Wait for all tasks to complete
+    futures::future::join_all(handles).await;
+
+    // Verify all 100 requests were queued (no race conditions lost requests)
+    let queue_size = router.queued_request_count(server_name).await;
+    assert_eq!(
+        queue_size, 100,
+        "All 100 requests should be queued without race conditions"
+    );
+
+    // Process and verify
+    let processed = router.process_queued_requests(server_name).await;
+    assert_eq!(processed.len(), 100);
+}
+
+/// T028 Test Case 4: No deadlocks during concurrent operations
+#[tokio::test]
+async fn t028_no_deadlocks() {
+    use mcp_rust_proxy::proxy::router::{QueuedRequest, RequestRouter};
+
+    let router = Arc::new(RequestRouter::new());
+    let state = Arc::new(ServerConnectionState::new("deadlock-test".to_string()));
+    let server_name = "deadlock-test";
+
+    // Start initialization
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+
+    // Spawn multiple tasks doing different operations concurrently
+    let mut handles = vec![];
+
+    // 10 tasks queuing requests
+    for i in 0..10 {
+        let router_clone = Arc::clone(&router);
+        let server_name = server_name.to_string();
+        handles.push(tokio::spawn(async move {
+            let (tx, _rx) = tokio::sync::oneshot::channel();
+            let request = QueuedRequest {
+                request_id: format!("req-{}", i),
+                method: "tools/list".to_string(),
+                params: None,
+                response_tx: Arc::new(Mutex::new(Some(tx))),
+            };
+            router_clone.queue_request(&server_name, request).await;
+        }));
+    }
+
+    // 10 tasks checking queue size
+    for _ in 0..10 {
+        let router_clone = Arc::clone(&router);
+        let server_name = server_name.to_string();
+        handles.push(tokio::spawn(async move {
+            let _size = router_clone.queued_request_count(&server_name).await;
+        }));
+    }
+
+    // 10 tasks checking server state
+    for _ in 0..10 {
+        let state_clone = Arc::clone(&state);
+        handles.push(tokio::spawn(async move {
+            let _ready = state_clone.is_ready().await;
+            let _can_send = state_clone.can_send_request("tools/list").await;
+        }));
+    }
+
+    // Wait for all tasks with timeout to detect deadlocks
+    let timeout = Duration::from_secs(5);
+    let result = tokio::time::timeout(timeout, futures::future::join_all(handles)).await;
+
+    assert!(
+        result.is_ok(),
+        "Operations should complete without deadlock"
+    );
+
+    // Complete initialization and process queue
+    state
+        .received_initialize_response(ProtocolVersion::V20250618)
+        .await
+        .unwrap();
+    state.complete_initialization().await.unwrap();
+
+    let processed = router.process_queued_requests(server_name).await;
+    assert_eq!(processed.len(), 10, "Should process all queued requests");
 }
