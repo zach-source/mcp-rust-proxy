@@ -78,6 +78,7 @@ pub mod mcp {
 
 // Protocol version support modules
 pub mod adapter;
+pub mod adapters;
 pub mod error;
 pub mod handshake;
 pub mod state;
