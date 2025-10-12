@@ -1,26 +1,29 @@
 <!--
-Sync Impact Report: Constitution v1.0.0 (Initial Ratification)
+Sync Impact Report: Constitution v1.1.0 (Incremental Implementation Principle)
 
-Version Change: None → 1.0.0 (Initial creation)
-Rationale: MINOR version - First constitution establishing project governance
+Version Change: 1.0.0 → 1.1.0
+Rationale: MINOR version - Added new workflow principle for incremental implementation
 
-Modified Principles: None (initial creation)
+Modified Principles:
+- Development Workflow: Added "Incremental Implementation (DEFAULT BEHAVIOR)" section
 
 Added Sections:
-- Core Principles (7 principles)
-- Performance Standards
-- Development Workflow
-- Governance
+- Incremental Implementation guidelines (5-7 tasks per session default)
 
 Removed Sections: None
 
 Templates Requiring Updates:
-- ✅ plan-template.md - Constitution Check section references this file
-- ✅ spec-template.md - No changes needed (already technology-agnostic)
-- ✅ tasks-template.md - No changes needed (testing emphasis already present)
-- ✅ commands/*.md - No changes needed (agent-agnostic)
+- ✅ No template changes needed - this is a workflow guideline for agents
+- ✅ /speckit.implement command already supports incremental execution
 
 Follow-up TODOs: None
+
+Previous Version Report (v1.0.0):
+Version Change: None → 1.0.0 (Initial creation)
+Rationale: MINOR version - First constitution establishing project governance
+Modified Principles: None (initial creation)
+Added Sections: Core Principles (7 principles), Performance Standards, Development Workflow, Governance
+Removed Sections: None
 -->
 
 # MCP Rust Proxy Constitution
@@ -150,6 +153,27 @@ Use the MCP ecosystem's own tools to improve development velocity and code quali
 
 ## Development Workflow
 
+### Incremental Implementation (DEFAULT BEHAVIOR)
+
+**By default, always continue implementation incrementally, completing 5-7 tasks before returning to the user for feedback, unless explicitly asked to stop or do otherwise.**
+
+**Requirements:**
+- Complete 5-7 tasks per implementation session as a target
+- Follow the task dependency order from tasks.md
+- Mark tasks as complete in tasks.md as they finish
+- Run tests after each task to verify correctness
+- Commit working code after each completed task or logical group
+- Update todo list to track progress
+- Only stop early if: blocked by errors, unclear requirements, or user requests pause
+
+**Rationale**: Incremental progress maintains momentum and delivers value continuously. Completing 5-7 tasks per session balances progress velocity with opportunities for course correction.
+
+**Exceptions:**
+- User explicitly asks to stop, review, or change direction
+- Critical blocker encountered (missing dependencies, test failures)
+- Requirements clarification needed
+- Major architectural decision required
+
 ### Code Quality Gates
 
 **Before Commit**:
@@ -247,4 +271,4 @@ For day-to-day development decisions not covered by this constitution, refer to:
 - **README.md** - Architecture overview and quick start
 - **specs/###-feature/quickstart.md** - Feature-specific implementation guide
 
-**Version**: 1.0.0 | **Ratified**: 2025-10-12 | **Last Amended**: 2025-10-12
+**Version**: 1.1.0 | **Ratified**: 2025-10-12 | **Last Amended**: 2025-10-12
