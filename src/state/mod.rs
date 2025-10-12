@@ -79,15 +79,18 @@ impl AppState {
             Arc::new(crate::plugin::PluginManager::new(plugin_config.clone()))
         });
 
+        // Create server_versions registry to share with connection pool
+        let server_versions = Arc::new(DashMap::new());
+
         let state = Arc::new(Self {
             config: Arc::new(RwLock::new(config)),
             servers: Arc::new(DashMap::new()),
             metrics: Arc::new(Metrics::new()),
-            connection_pool: Arc::new(ConnectionPool::new()),
+            connection_pool: Arc::new(ConnectionPool::new(server_versions.clone())),
             shutdown_tx,
             context_tracker: Arc::new(RwLock::new(None)),
             plugin_manager,
-            server_versions: Arc::new(DashMap::new()),
+            server_versions,
         });
 
         (state, shutdown_rx)

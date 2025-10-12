@@ -73,8 +73,7 @@ impl RequestHandler {
                     "capabilities": {
                         "tools": { "listChanged": false },
                         "resources": { "subscribe": false, "listChanged": false },
-                        "prompts": { "listChanged": false },
-                        "logging": {}
+                        "prompts": { "listChanged": false }
                     },
                     "serverInfo": {
                         "name": "mcp-rust-proxy",

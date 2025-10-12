@@ -1,18 +1,21 @@
 use super::{Connection, Transport};
 use crate::error::{PoolError, Result};
+use crate::state::ServerVersion;
 use dashmap::DashMap;
 use std::sync::Arc;
 
 pub struct ConnectionPool {
     connections: DashMap<String, Arc<dyn Connection>>,
     transports: DashMap<String, Arc<dyn Transport>>,
+    server_versions: Arc<DashMap<String, ServerVersion>>,
 }
 
 impl ConnectionPool {
-    pub fn new() -> Self {
+    pub fn new(server_versions: Arc<DashMap<String, ServerVersion>>) -> Self {
         Self {
             connections: DashMap::new(),
             transports: DashMap::new(),
+            server_versions,
         }
     }
 
@@ -71,7 +74,7 @@ impl ConnectionPool {
             .map_err(|_e| crate::error::TransportError::InvalidFormat)?;
         let response: JsonRpcMessage = serde_json::from_str(response_str.trim())?;
 
-        // Verify we got a successful response
+        // Verify we got a successful response and store version info
         match response {
             JsonRpcMessage::V2(JsonRpcV2Message::Response(resp)) => {
                 if resp.error.is_some() {
@@ -81,6 +84,45 @@ impl ConnectionPool {
                     ))
                     .into());
                 }
+
+                // Store protocol version and capabilities
+                if let Some(result) = &resp.result {
+                    let protocol_version = result
+                        .get("protocolVersion")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+
+                    let capabilities = result
+                        .get("capabilities")
+                        .cloned()
+                        .unwrap_or(serde_json::json!({}));
+
+                    self.server_versions.insert(
+                        server_name.to_string(),
+                        ServerVersion {
+                            protocol_version: protocol_version.clone(),
+                            capabilities,
+                            detected_at: chrono::Utc::now(),
+                        },
+                    );
+
+                    tracing::info!(
+                        "Server {} initialized with protocol version {}",
+                        server_name,
+                        protocol_version
+                    );
+
+                    // Warn if version mismatch
+                    if protocol_version != "2025-03-26" {
+                        tracing::warn!(
+                            "Protocol version mismatch: Server {} uses {}, proxy uses 2025-03-26",
+                            server_name,
+                            protocol_version
+                        );
+                    }
+                }
+
                 tracing::debug!(
                     "Received initialize response from {}: {:?}",
                     server_name,
