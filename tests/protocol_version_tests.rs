@@ -1,4 +1,4 @@
-use mcp_rust_proxy::protocol::{ProtocolError, ProtocolVersion};
+use mcp_rust_proxy::protocol::ProtocolVersion;
 
 #[test]
 fn test_parse_valid_version_2024_11_05() {
@@ -24,7 +24,11 @@ fn test_parse_valid_version_2025_06_18() {
 #[test]
 fn test_parse_unsupported_version_future() {
     let (version, supported) = ProtocolVersion::from_string("2026-01-01");
-    assert_eq!(version, ProtocolVersion::V20250326, "Should default to V20250326");
+    assert_eq!(
+        version,
+        ProtocolVersion::V20250326,
+        "Should default to V20250326"
+    );
     assert!(!supported, "2026-01-01 should not be supported");
 }
 
@@ -42,7 +46,12 @@ fn test_round_trip_conversion() {
     for version_str in versions {
         let (version, supported) = ProtocolVersion::from_string(version_str);
         assert!(supported, "Version {} should be supported", version_str);
-        assert_eq!(version.as_str(), version_str, "Round-trip failed for {}", version_str);
+        assert_eq!(
+            version.as_str(),
+            version_str,
+            "Round-trip failed for {}",
+            version_str
+        );
     }
 }
 
