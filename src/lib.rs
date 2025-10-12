@@ -9,6 +9,7 @@ pub mod proxy;
 pub mod server;
 pub mod state;
 pub mod transport;
+pub mod types;
 pub mod web;
 
 // #[cfg(test)]
