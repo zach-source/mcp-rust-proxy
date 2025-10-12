@@ -277,3 +277,164 @@ async fn test_slow_server_initialization() {
     // Verify response is valid
     assert_eq!(response["result"]["protocolVersion"], "2025-03-26");
 }
+
+// ============================================================================
+// T024: Request Gating Tests
+// ============================================================================
+
+/// T024 Test Case 1: tools/list request blocked when state is Connecting
+#[tokio::test]
+async fn t024_tools_list_blocked_when_connecting() {
+    let state = ServerConnectionState::new("test-server".to_string());
+
+    // State should be Connecting initially
+    assert!(!state.is_ready().await);
+
+    // tools/list should be blocked
+    assert!(
+        !state.can_send_request("tools/list").await,
+        "tools/list should be blocked in Connecting state"
+    );
+}
+
+/// T024 Test Case 2: tools/list request blocked when state is Initializing
+#[tokio::test]
+async fn t024_tools_list_blocked_when_initializing() {
+    let state = ServerConnectionState::new("test-server".to_string());
+
+    // Transition to Initializing
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+
+    // tools/list should be blocked
+    assert!(
+        !state.can_send_request("tools/list").await,
+        "tools/list should be blocked in Initializing state"
+    );
+}
+
+/// T024 Test Case 3: tools/list request blocked when state is SendingInitialized
+#[tokio::test]
+async fn t024_tools_list_blocked_when_sending_initialized() {
+    let state = ServerConnectionState::new("test-server".to_string());
+
+    // Transition through Connecting → Initializing → SendingInitialized
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+    state
+        .received_initialize_response(ProtocolVersion::V20250618)
+        .await
+        .unwrap();
+
+    // tools/list should be blocked
+    assert!(
+        !state.can_send_request("tools/list").await,
+        "tools/list should be blocked in SendingInitialized state"
+    );
+}
+
+/// T024 Test Case 4: tools/list request allowed when state is Ready
+#[tokio::test]
+async fn t024_tools_list_allowed_when_ready() {
+    let state = ServerConnectionState::new("test-server".to_string());
+
+    // Complete full initialization sequence
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+    state
+        .received_initialize_response(ProtocolVersion::V20250618)
+        .await
+        .unwrap();
+    state.complete_initialization().await.unwrap();
+
+    // tools/list should be allowed
+    assert!(
+        state.can_send_request("tools/list").await,
+        "tools/list should be allowed in Ready state"
+    );
+}
+
+/// T024 Test Case 5: initialize request only allowed in Connecting state
+#[tokio::test]
+async fn t024_initialize_only_in_connecting() {
+    let state = ServerConnectionState::new("test-server".to_string());
+
+    // initialize should be allowed in Connecting state
+    assert!(
+        state.can_send_request("initialize").await,
+        "initialize should be allowed in Connecting state"
+    );
+
+    // Transition to Initializing
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+
+    // initialize should NOT be allowed anymore
+    assert!(
+        !state.can_send_request("initialize").await,
+        "initialize should NOT be allowed in Initializing state"
+    );
+
+    // Complete initialization
+    state
+        .received_initialize_response(ProtocolVersion::V20250618)
+        .await
+        .unwrap();
+    state.complete_initialization().await.unwrap();
+
+    // initialize should NOT be allowed in Ready state
+    assert!(
+        !state.can_send_request("initialize").await,
+        "initialize should NOT be allowed in Ready state"
+    );
+}
+
+/// T024 Test Case 6: Multiple request types blocked before Ready
+#[tokio::test]
+async fn t024_all_requests_blocked_before_ready() {
+    let state = ServerConnectionState::new("test-server".to_string());
+
+    // Start initialization but don't complete it
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+
+    // All non-initialize requests should be blocked
+    assert!(
+        !state.can_send_request("tools/list").await,
+        "tools/list should be blocked"
+    );
+    assert!(
+        !state.can_send_request("resources/list").await,
+        "resources/list should be blocked"
+    );
+    assert!(
+        !state.can_send_request("resources/read").await,
+        "resources/read should be blocked"
+    );
+    assert!(
+        !state.can_send_request("tools/call").await,
+        "tools/call should be blocked"
+    );
+    assert!(
+        !state.can_send_request("prompts/list").await,
+        "prompts/list should be blocked"
+    );
+    assert!(
+        !state.can_send_request("prompts/get").await,
+        "prompts/get should be blocked"
+    );
+    assert!(
+        !state.can_send_request("completion/complete").await,
+        "completion/complete should be blocked"
+    );
+}

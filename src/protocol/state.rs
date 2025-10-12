@@ -153,6 +153,7 @@ impl ServerConnectionState {
         match (method, &*state) {
             // Initialize can only be sent when connecting
             ("initialize", ConnectionState::Connecting) => true,
+            ("initialize", _) => false, // initialize not allowed in any other state
 
             // All other requests require Ready state
             (_, ConnectionState::Ready { .. }) => true,
