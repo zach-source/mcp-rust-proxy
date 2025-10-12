@@ -156,6 +156,7 @@ mod tests {
             },
             servers: std::collections::HashMap::new(),
             context_tracing: Default::default(),
+            plugins: None,
         }
     }
 

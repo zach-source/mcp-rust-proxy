@@ -13,6 +13,8 @@ pub struct Config {
     pub health_check: HealthCheckConfig,
     #[serde(default)]
     pub context_tracing: ContextTracingConfig,
+    #[serde(default)]
+    pub plugins: Option<crate::plugin::PluginConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -23,6 +25,8 @@ pub struct ServerConfig {
     #[serde(default)]
     pub env: HashMap<String, String>,
     pub transport: TransportConfig,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     #[serde(default = "default_restart_on_failure")]
     pub restart_on_failure: bool,
     #[serde(default)]
@@ -31,6 +35,8 @@ pub struct ServerConfig {
     pub max_restarts: u32,
     #[serde(default = "default_restart_delay")]
     pub restart_delay_ms: u64,
+    #[serde(default)]
+    pub initialization_delay_ms: Option<u64>,
     #[serde(default)]
     pub health_check: Option<ServerHealthCheckConfig>,
 }
@@ -118,6 +124,10 @@ pub struct ServerHealthCheckConfig {
 }
 
 // Default value functions
+fn default_enabled() -> bool {
+    true
+}
+
 fn default_restart_on_failure() -> bool {
     true
 }

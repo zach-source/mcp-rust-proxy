@@ -1,0 +1,72 @@
+# Official Plugins Configuration
+#
+# This configuration uses the officially supported plugins that ship with MCP Rust Proxy.
+# These plugins are maintained, tested, and recommended for production use.
+
+# Plugin system configuration
+plugins:
+  pluginDir: ./src/plugins/official    # Official plugins directory
+  nodeExecutable: node
+  maxConcurrentExecutions: 20
+  poolSizePerPlugin: 10
+  defaultTimeoutMs: 30000
+
+  # Server-specific plugin assignments
+  servers:
+    # Context7 Documentation Server - Content Curation + Security
+    context7:
+      response:
+        - name: curation-plugin           # AI-powered content reduction
+          order: 1
+          enabled: true
+          timeoutMs: 60000
+        - name: prompt-injection-scanner  # Scan for prompt injection
+          order: 2
+          enabled: true
+          timeoutMs: 5000
+
+    # Filesystem Server - Request Security
+    filesystem:
+      request:
+        - name: security-plugin           # Block sensitive data
+          order: 1
+          enabled: true
+          timeoutMs: 5000
+
+    # Generic MCP Server - Full Protection
+    generic-server:
+      request:
+        - name: security-plugin           # Validate requests
+          order: 1
+          enabled: true
+      response:
+        - name: prompt-injection-scanner  # Scan responses
+          order: 1
+          enabled: true
+
+# MCP Server configuration (example)
+servers:
+  - name: context7
+    transport:
+      type: stdio
+      command: npx
+      args:
+        - "-y"
+        - "@context7/mcp-server"
+
+  - name: filesystem
+    transport:
+      type: stdio
+      command: npx
+      args:
+        - "-y"
+        - "@modelcontextprotocol/server-filesystem"
+        - "/path/to/allowed/directory"
+
+# Environment variables required:
+# - ANTHROPIC_API_KEY: For curation-plugin (required if enabled)
+
+# Security notes:
+# - security-plugin: Blocks passwords, API keys, tokens, private keys in requests
+# - prompt-injection-scanner: Detects and sanitizes prompt injection in responses
+# - Both plugins log security events to stderr for audit trails

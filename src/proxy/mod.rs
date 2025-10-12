@@ -4,8 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use warp::Filter;
 
+pub mod cache_warmer;
 pub mod handler;
+pub mod prompts;
+pub mod resources;
 pub mod router;
+pub mod server_tools;
 pub mod tracing_tools;
 
 pub use handler::RequestHandler;

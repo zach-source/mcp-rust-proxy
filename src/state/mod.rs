@@ -24,6 +24,14 @@ pub enum ServerState {
     Failed,
 }
 
+/// Registry for storing server protocol versions and capabilities
+#[derive(Clone)]
+pub struct ServerVersion {
+    pub protocol_version: String,
+    pub capabilities: serde_json::Value,
+    pub detected_at: DateTime<Utc>,
+}
+
 pub struct AppState {
     pub config: Arc<RwLock<Config>>,
     pub servers: Arc<DashMap<String, ServerInfo>>,
@@ -31,6 +39,8 @@ pub struct AppState {
     pub connection_pool: Arc<ConnectionPool>,
     pub shutdown_tx: tokio::sync::broadcast::Sender<()>,
     pub context_tracker: Arc<RwLock<Option<Arc<ContextTracker>>>>,
+    pub plugin_manager: Option<Arc<crate::plugin::PluginManager>>,
+    pub server_versions: Arc<DashMap<String, ServerVersion>>,
 }
 
 #[derive(Clone)]
@@ -64,13 +74,23 @@ impl AppState {
     pub fn new(config: Config) -> (Arc<Self>, tokio::sync::broadcast::Receiver<()>) {
         let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(16);
 
+        // Initialize plugin manager if plugins are configured
+        let plugin_manager = config.plugins.as_ref().map(|plugin_config| {
+            Arc::new(crate::plugin::PluginManager::new(plugin_config.clone()))
+        });
+
+        // Create server_versions registry to share with connection pool
+        let server_versions = Arc::new(DashMap::new());
+
         let state = Arc::new(Self {
             config: Arc::new(RwLock::new(config)),
             servers: Arc::new(DashMap::new()),
             metrics: Arc::new(Metrics::new()),
-            connection_pool: Arc::new(ConnectionPool::new()),
+            connection_pool: Arc::new(ConnectionPool::new(server_versions.clone())),
             shutdown_tx,
             context_tracker: Arc::new(RwLock::new(None)),
+            plugin_manager,
+            server_versions,
         });
 
         (state, shutdown_rx)

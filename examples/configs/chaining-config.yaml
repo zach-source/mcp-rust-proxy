@@ -1,0 +1,92 @@
+# Plugin Chaining Configuration Example
+#
+# This configuration demonstrates how to chain multiple plugins together
+# for complex transformations. Each plugin receives the output of the
+# previous plugin as its input.
+
+# Plugin system configuration
+plugins:
+  pluginDir: ./examples/plugins
+  nodeExecutable: node
+  maxConcurrentExecutions: 10
+  poolSizePerPlugin: 5
+  defaultTimeoutMs: 30000
+
+  # Server-specific plugin assignments
+  servers:
+    # Example 1: Response transformation chain for Context7
+    context7:
+      response:  # Response phase (after server returns documentation)
+        - name: curation-plugin
+          order: 1
+          enabled: true
+          timeoutMs: 45000  # AI curation needs longer timeout
+        - name: path-normalizer
+          order: 2
+          enabled: true
+          timeoutMs: 5000
+        - name: enrich-metadata
+          order: 3
+          enabled: true
+          timeoutMs: 3000
+
+    # Example 2: Request security chain for filesystem
+    filesystem:
+      request:  # Request phase (before forwarding to server)
+        - name: security-plugin
+          order: 1
+          enabled: true
+          timeoutMs: 5000
+        - name: logging-plugin
+          order: 2
+          enabled: true
+          timeoutMs: 3000
+
+    # Example 3: Combined request and response chains
+    api-server:
+      request:
+        - name: security-plugin
+          order: 1
+          enabled: true
+      response:
+        - name: path-normalizer
+          order: 1
+          enabled: true
+        - name: enrich-metadata
+          order: 2
+          enabled: true
+
+# MCP Server configuration (example)
+servers:
+  - name: context7
+    transport:
+      type: stdio
+      command: npx
+      args:
+        - "-y"
+        - "@context7/mcp-server"
+
+  - name: filesystem
+    transport:
+      type: stdio
+      command: npx
+      args:
+        - "-y"
+        - "@modelcontextprotocol/server-filesystem"
+        - "/path/to/allowed/directory"
+
+  - name: api-server
+    transport:
+      type: stdio
+      command: npx
+      args:
+        - "-y"
+        - "your-api-server"
+
+# Notes:
+# - Plugins execute in order (lower order values execute first)
+# - Each plugin receives the output of the previous plugin
+# - If any plugin returns continue=false, the chain stops
+# - Metadata from ALL executed plugins is aggregated in the final response
+# - Request-phase plugins can block requests before they reach the MCP server
+# - Response-phase plugins transform the server's response before returning to client

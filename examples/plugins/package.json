@@ -1,0 +1,9 @@
+{
+  "name": "mcp-proxy-plugins",
+  "version": "1.0.0",
+  "description": "Example plugins for MCP Rust Proxy",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0"
+  }
+}

@@ -1,0 +1,64 @@
+# Security Plugin Configuration Example
+#
+# This configuration demonstrates how to set up security and logging plugins
+# for the MCP Rust Proxy to validate and audit requests.
+
+# Plugin system configuration
+plugins:
+  pluginDir: ./examples/plugins
+  nodeExecutable: node
+  maxConcurrentExecutions: 10
+  poolSizePerPlugin: 5
+  defaultTimeoutMs: 30000
+
+  # Server-specific plugin assignments
+  servers:
+    # Example: Apply security plugins to filesystem server
+    filesystem:
+      request:  # Request phase (before forwarding to MCP server)
+        - name: security-plugin
+          order: 1
+          enabled: true
+          timeoutMs: 5000
+        - name: logging-plugin
+          order: 2
+          enabled: true
+          timeoutMs: 3000
+
+    # Example: Apply logging to all Context7 requests
+    context7:
+      request:
+        - name: logging-plugin
+          order: 1
+          enabled: true
+
+    # Example: Combined request security and response curation
+    combined-example:
+      request:
+        - name: security-plugin
+          order: 1
+          enabled: true
+      response:
+        - name: curate
+          order: 1
+          enabled: true
+          timeoutMs: 45000
+
+# MCP Server configuration (example)
+servers:
+  - name: filesystem
+    transport:
+      type: stdio
+      command: npx
+      args:
+        - "-y"
+        - "@modelcontextprotocol/server-filesystem"
+        - "/path/to/allowed/directory"
+
+  - name: context7
+    transport:
+      type: stdio
+      command: npx
+      args:
+        - "-y"
+        - "@context7/mcp-server"
