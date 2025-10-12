@@ -87,6 +87,7 @@ pub mod version;
 // Re-exports for convenience
 pub use adapter::ProtocolAdapter;
 pub use error::ProtocolError;
+pub use state::{ConnectionState, ServerConnectionState};
 pub use version::ProtocolVersion;
 
 #[cfg(test)]
