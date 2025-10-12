@@ -50,7 +50,7 @@ impl ConnectionPool {
             id: JsonRpcId::Number(1),
             method: "initialize".to_string(),
             params: Some(serde_json::json!({
-                "protocolVersion": "0.1.0",
+                "protocolVersion": "2025-03-26",
                 "capabilities": {},
                 "clientInfo": {
                     "name": "mcp-rust-proxy",

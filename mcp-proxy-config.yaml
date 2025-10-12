@@ -97,6 +97,7 @@ servers:
     args:
       - "sse"
     env: {}
+    enabled: false # Disabled by default - enable when needed
     transport:
       type: httpSse
       url: "http://localhost:8080/sse" # You may need to adjust this URL
@@ -110,6 +111,20 @@ servers:
     transport:
       type: stdio
     restartOnFailure: true
+
+  # Serena - Semantic code analysis and navigation
+  serena:
+    command: "/nix/store/m3im9527fy90pw0n59ba4l25bk3rd2lj-serena-mcp-launcher"
+    args: []
+    env:
+      HOME: "/Users/ztaylor"
+      PATH: "/nix/store/rjx0gy4cl4wp2wmibkb3yjpzw8kb7rk6-uv-0.7.22/bin:/nix/store/v21kg4vm7yy0wflh0avkibz0shk86jn8-python3-3.12.11/bin:/nix/store/sn3k53wdfngc737bkci111ic8psm7jn8-git-2.50.1/bin:/nix/store/1n6wb8x5dw1q5wdyws70myxr1397g0jd-rust-default-1.88.0/bin:/nix/store/20iv68w4k1vvjh18xxysjihfm02vq53k-rust-analyzer-2025-07-28/bin:/nix/store/apjxbw3ff380md24x0nmka3hi979drcr-nodejs-22.16.0/bin:/nix/store/7712hv9svx4cf3cc5g848aa073aak0a4-coreutils-9.7/bin:/usr/bin:/bin"
+    enabled: true
+    transport:
+      type: stdio
+    restartOnFailure: true
+    healthCheck:
+      enabled: false # Disable health checks - Serena doesn't support ping
 
   # Time - Time and timezone utilities
   time:
@@ -142,19 +157,50 @@ webUi:
 # Global health check configuration
 # These are defaults that can be overridden per server
 healthCheck:
-  enabled: true  # Enable by default, can be disabled per server
-  intervalSeconds: 60  # Check every minute
+  enabled: true # Enable by default, can be disabled per server
+  intervalSeconds: 60 # Check every minute
   timeoutSeconds: 5
-  maxAttempts: 3  # Try 3 times before marking as unhealthy
-  retryIntervalSeconds: 10  # Wait 10 seconds between retry attempts
+  maxAttempts: 3 # Try 3 times before marking as unhealthy
+  retryIntervalSeconds: 10 # Wait 10 seconds between retry attempts
 
 # AI Context Tracing Configuration
 # Enables LLM agents to track provenance and submit quality feedback
 contextTracing:
   enabled: true
-  storageType: hybrid  # hybrid (DashMap + SQLite) or sqliteOnly
+  storageType: hybrid # hybrid (DashMap + SQLite) or sqliteOnly
   sqlitePath: /Users/ztaylor/.mcp-proxy/context-tracing.db
-  cacheSize: 10000  # Max items in memory cache
-  cacheTtlSeconds: 604800  # 7 days
-  retentionDays: 90  # Delete data older than 90 days
+  cacheSize: 10000 # Max items in memory cache
+  cacheTtlSeconds: 604800 # 7 days
+  retentionDays: 90 # Delete data older than 90 days
 
+# JavaScript Plugin System Configuration
+# Official plugins for security and content optimization
+plugins:
+  pluginDir: ./src/plugins/official # Official maintained plugins
+  nodeExecutable: node
+  maxConcurrentExecutions: 20 # Concurrent plugin processes
+  poolSizePerPlugin: 10 # Warm processes per plugin
+  defaultTimeoutMs: 30000 # 30 second default timeout
+
+  servers:
+    # Context7 - AI-powered curation + prompt injection protection
+    context7:
+      response:
+        - name: curation-plugin
+          order: 1
+          enabled: true # Enable when ANTHROPIC_API_KEY is set
+          timeoutMs: 60000
+        - name: prompt-injection-scanner
+          order: 2
+          enabled: true # Response security scanning
+          timeoutMs: 5000
+
+    # Filesystem - Request security validation
+    filesystem:
+      request:
+        - name: security-plugin
+          order: 1
+          enabled: true # Block sensitive data in requests
+          timeoutMs: 5000
+# Environment variables:
+# - No API key required! Curation plugin uses Claude Agent SDK with CLI session context

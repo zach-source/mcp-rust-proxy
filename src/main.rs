@@ -126,6 +126,22 @@ async fn main() -> Result<()> {
     // Initialize application state
     let (state, shutdown_rx) = AppState::new(config.clone());
 
+    // Discover and load plugins if configured
+    if let Some(plugin_manager) = &state.plugin_manager {
+        info!(
+            "Discovering plugins from: {}",
+            config.plugins.as_ref().unwrap().plugin_dir.display()
+        );
+        match plugin_manager.discover_plugins().await {
+            Ok(count) => {
+                info!("Discovered {} plugins successfully", count);
+            }
+            Err(e) => {
+                error!("Failed to discover plugins: {}", e);
+            }
+        }
+    }
+
     // Initialize context tracker if enabled
     if config.context_tracing.enabled {
         info!("Initializing context tracing framework");
@@ -194,6 +210,18 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Start cache warmer for instant tool/resource availability
+    let cache_warmer_state = state.clone();
+    let cache_warmer_handler = Arc::new(mcp_rust_proxy::proxy::RequestHandler::new(state.clone()));
+    let cache_warmer_handle = tokio::spawn(async move {
+        let warmer = mcp_rust_proxy::proxy::cache_warmer::CacheWarmer::new(
+            cache_warmer_state,
+            cache_warmer_handler,
+            60, // Refresh every 60 seconds
+        );
+        warmer.run().await;
+    });
+
     // Start web UI if enabled
     let web_handle = if state.config.read().await.web_ui.enabled {
         let web_state = state.clone();
@@ -244,6 +272,22 @@ async fn run_stdio_mode(config: mcp_rust_proxy::config::Config) -> Result<()> {
 
     // Initialize application state
     let (state, _shutdown_rx) = AppState::new(config.clone());
+
+    // Discover and load plugins if configured
+    if let Some(plugin_manager) = &state.plugin_manager {
+        info!(
+            "Discovering plugins from: {}",
+            config.plugins.as_ref().unwrap().plugin_dir.display()
+        );
+        match plugin_manager.discover_plugins().await {
+            Ok(count) => {
+                info!("Discovered {} plugins successfully", count);
+            }
+            Err(e) => {
+                error!("Failed to discover plugins: {}", e);
+            }
+        }
+    }
 
     // Initialize context tracker if enabled
     if config.context_tracing.enabled {

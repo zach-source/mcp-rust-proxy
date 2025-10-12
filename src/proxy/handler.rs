@@ -65,6 +65,23 @@ impl RequestHandler {
 
         // Handle based on method
         let result = match method {
+            "initialize" => {
+                // Return MCP server capabilities
+                let config = self.state.config.read().await;
+                serde_json::json!({
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {
+                        "tools": { "listChanged": false },
+                        "resources": { "subscribe": false, "listChanged": false },
+                        "prompts": { "listChanged": false },
+                        "logging": {}
+                    },
+                    "serverInfo": {
+                        "name": "mcp-rust-proxy",
+                        "version": env!("CARGO_PKG_VERSION")
+                    }
+                })
+            }
             "list" => {
                 let params = request
                     .get("params")
@@ -91,11 +108,34 @@ impl RequestHandler {
                     .cloned()
                     .unwrap_or(serde_json::json!({}));
 
-                // Check if this is a tracing tool
+                // Check if this is a proxy management tool
                 if tool_name.starts_with("mcp__proxy__tracing__") {
                     let tracing_tool = tool_name.strip_prefix("mcp__proxy__tracing__").unwrap();
                     match super::tracing_tools::handle_tracing_tool(
                         tracing_tool,
+                        arguments,
+                        self.state.clone(),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(e) => {
+                            return Ok(MCPResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id,
+                                result: None,
+                                error: Some(MCPError {
+                                    code: -32603,
+                                    message: e,
+                                    data: None,
+                                }),
+                            });
+                        }
+                    }
+                } else if tool_name.starts_with("mcp__proxy__server__") {
+                    let server_tool = tool_name.strip_prefix("mcp__proxy__server__").unwrap();
+                    match super::server_tools::handle_server_tool(
+                        server_tool,
                         arguments,
                         self.state.clone(),
                     )
@@ -155,6 +195,25 @@ impl RequestHandler {
                             });
                         }
                     }
+                } else if params.uri.starts_with("proxy://") {
+                    // Handle proxy-native resources
+                    match super::resources::handle_proxy_resource(&params.uri, self.state.clone())
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(e) => {
+                            return Ok(MCPResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id,
+                                result: None,
+                                error: Some(MCPError {
+                                    code: -32603,
+                                    message: format!("Failed to read proxy resource: {}", e),
+                                    data: None,
+                                }),
+                            });
+                        }
+                    }
                 } else {
                     self.handle_read(params, router).await?
                 }
@@ -186,12 +245,14 @@ impl RequestHandler {
                     .await
                 {
                     Ok(mut result) => {
-                        // Always add context tracing tools (they check if enabled internally)
+                        // Always add proxy management tools
                         if let Some(tools_array) =
                             result.get_mut("tools").and_then(|t| t.as_array_mut())
                         {
                             let tracing_tools = super::tracing_tools::get_tracing_tools();
+                            let server_tools = super::server_tools::get_server_tools();
                             tools_array.extend(tracing_tools);
+                            tools_array.extend(server_tools);
                         }
 
                         // Update cache
@@ -217,20 +278,56 @@ impl RequestHandler {
                     }
                 }
             }
-            "resources/list" | "prompts/list" => {
-                // Handle resources/list and prompts/list similarly to tools/list
+            "resources/list" => {
+                // Use list_resources() to ensure proxy resources are included
+                self.list_resources(router).await?
+            }
+            "prompts/list" => {
+                // Use list_prompts() to ensure proxy prompts are included
+                self.list_prompts(router).await?
+            }
+            "resources/templates/list" => {
+                // Forward to backend servers for resource templates
                 match self
                     .forward_to_all_servers(method, request.get("params"))
                     .await
                 {
                     Ok(result) => result,
-                    Err(_) => {
-                        // If no backends have resources/prompts, return empty list with tracing resources
-                        if method == "resources/list" {
-                            let tracing_resources = super::tracing_tools::get_tracing_resources();
-                            serde_json::json!({ "resources": tracing_resources })
-                        } else {
-                            serde_json::json!({ "prompts": [] })
+                    Err(_) => serde_json::json!({ "resourceTemplates": [] }),
+                }
+            }
+            "prompts/get" => {
+                // Check if this is a proxy-native prompt first
+                let params = request.get("params");
+                let prompt_name = params
+                    .and_then(|p| p.get("name"))
+                    .and_then(|n| n.as_str())
+                    .ok_or_else(|| ProxyError::InvalidRequest("Missing prompt name".to_string()))?;
+
+                // Try to get from proxy prompts
+                if let Some(prompt) = super::prompts::get_prompt(
+                    prompt_name,
+                    params.and_then(|p| p.get("arguments")).cloned(),
+                ) {
+                    prompt
+                } else {
+                    // Forward to backend servers
+                    match self
+                        .forward_to_all_servers(method, request.get("params"))
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(e) => {
+                            return Ok(MCPResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id,
+                                result: None,
+                                error: Some(MCPError {
+                                    code: -32601,
+                                    message: format!("Prompt not found: {}", prompt_name),
+                                    data: None,
+                                }),
+                            });
                         }
                     }
                 }
@@ -359,6 +456,34 @@ impl RequestHandler {
             (server, params.tool.clone())
         };
 
+        // Check if server is enabled
+        let config = self.state.config.read().await;
+        let server_enabled = config
+            .servers
+            .get(&server_name)
+            .map(|s| s.enabled)
+            .unwrap_or(true);
+        drop(config);
+
+        if !server_enabled {
+            return Err(ProxyError::ServerNotFound(format!(
+                "Server '{}' is disabled. Enable it with mcp__proxy__server__enable",
+                server_name
+            )));
+        }
+
+        // Extract tokens parameter from arguments (for Context7 and similar servers)
+        let max_tokens = params
+            .arguments
+            .get("tokens")
+            .and_then(|t| t.as_u64())
+            .map(|t| t as u32);
+
+        // Apply request-phase plugins before forwarding to server
+        let processed_arguments = self
+            .apply_request_plugins(&server_name, &original_tool_name, params.arguments.clone())
+            .await?;
+
         // Get connection from pool
         let conn = self.state.connection_pool.get(&server_name).await?;
 
@@ -369,7 +494,7 @@ impl RequestHandler {
             "method": "tools/call",
             "params": {
                 "name": original_tool_name,
-                "arguments": params.arguments,
+                "arguments": processed_arguments,
             },
             "id": 1
         });
@@ -381,15 +506,24 @@ impl RequestHandler {
         let response = conn.recv().await?;
         let response: Value = serde_json::from_slice(&response)?;
 
-        // Store the server_name as a field on self temporarily (we'll need to refactor this)
-        // For now, we can't easily pass tracking context through, so lineage will be recorded
-        // at the handle_request level
-
         // Extract result
-        response
+        let mut result = response
             .get("result")
             .cloned()
-            .ok_or_else(|| ProxyError::InvalidRequest("No result in response".to_string()))
+            .ok_or_else(|| ProxyError::InvalidRequest("No result in response".to_string()))?;
+
+        // Apply response-phase plugins if configured
+        result = self
+            .apply_response_plugins(
+                &server_name,
+                &original_tool_name,
+                result,
+                max_tokens,
+                Some(params.arguments.clone()),
+            )
+            .await?;
+
+        Ok(result)
     }
 
     async fn handle_read(&self, params: ReadParams, router: Arc<RequestRouter>) -> Result<Value> {
@@ -426,24 +560,68 @@ impl RequestHandler {
     }
 
     async fn list_tools(&self, _router: Arc<RequestRouter>) -> Result<Value> {
-        // TODO: Aggregate tools from all servers
-        Ok(serde_json::json!({
-            "tools": []
-        }))
+        // Aggregate tools from all backend servers
+        match self.forward_to_all_servers("tools/list", None).await {
+            Ok(mut result) => {
+                // Add proxy management tools
+                if let Some(tools_array) = result.get_mut("tools").and_then(|t| t.as_array_mut()) {
+                    let tracing_tools = super::tracing_tools::get_tracing_tools();
+                    let server_tools = super::server_tools::get_server_tools();
+                    tools_array.extend(tracing_tools);
+                    tools_array.extend(server_tools);
+                }
+                Ok(result)
+            }
+            Err(_) => {
+                // If no backends available, return only proxy tools
+                let mut proxy_tools = super::tracing_tools::get_tracing_tools();
+                proxy_tools.extend(super::server_tools::get_server_tools());
+                Ok(serde_json::json!({ "tools": proxy_tools }))
+            }
+        }
     }
 
     async fn list_resources(&self, _router: Arc<RequestRouter>) -> Result<Value> {
-        // TODO: Aggregate resources from all servers
-        Ok(serde_json::json!({
-            "resources": []
-        }))
+        // Aggregate resources from all backend servers
+        match self.forward_to_all_servers("resources/list", None).await {
+            Ok(mut result) => {
+                // Add proxy-native resources
+                if let Some(resources_array) =
+                    result.get_mut("resources").and_then(|r| r.as_array_mut())
+                {
+                    let proxy_resources = super::resources::get_proxy_resources();
+                    resources_array.extend(proxy_resources);
+                }
+                Ok(result)
+            }
+            Err(_) => {
+                // If no backends available, return proxy + tracing resources
+                let mut all_resources = super::tracing_tools::get_tracing_resources();
+                all_resources.extend(super::resources::get_proxy_resources());
+                Ok(serde_json::json!({ "resources": all_resources }))
+            }
+        }
     }
 
     async fn list_prompts(&self, _router: Arc<RequestRouter>) -> Result<Value> {
-        // TODO: Aggregate prompts from all servers
-        Ok(serde_json::json!({
-            "prompts": []
-        }))
+        // Aggregate prompts from all backend servers
+        match self.forward_to_all_servers("prompts/list", None).await {
+            Ok(mut result) => {
+                // Add proxy-native prompts
+                if let Some(prompts_array) =
+                    result.get_mut("prompts").and_then(|p| p.as_array_mut())
+                {
+                    let proxy_prompts = super::prompts::get_proxy_prompts();
+                    prompts_array.extend(proxy_prompts);
+                }
+                Ok(result)
+            }
+            Err(_) => {
+                // If no backends available, return only proxy prompts
+                let proxy_prompts = super::prompts::get_proxy_prompts();
+                Ok(serde_json::json!({ "prompts": proxy_prompts }))
+            }
+        }
     }
 
     async fn forward_to_all_servers(&self, method: &str, params: Option<&Value>) -> Result<Value> {
@@ -467,9 +645,9 @@ impl RequestHandler {
             let handler = self.clone();
 
             futures.push(tokio::spawn(async move {
-                // Apply a per-server timeout of 5 seconds
+                // Apply a per-server timeout of 30 seconds (to accommodate slow initialization)
                 let result = timeout(
-                    Duration::from_secs(5),
+                    Duration::from_secs(30),
                     handler.forward_to_server(&server_name, &method, params.as_ref()),
                 )
                 .await;
@@ -708,6 +886,164 @@ impl RequestHandler {
             .get("result")
             .cloned()
             .ok_or_else(|| ProxyError::InvalidRequest("No result in response".to_string()))
+    }
+
+    /// Apply request-phase plugins to modify or block requests before forwarding
+    async fn apply_request_plugins(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        arguments: Value,
+    ) -> Result<Value> {
+        // Check if plugins are configured
+        let plugin_manager = match &self.state.plugin_manager {
+            Some(manager) => manager,
+            None => return Ok(arguments), // No plugins configured
+        };
+
+        // Get plugin config from state
+        let config_guard = self.state.config.read().await;
+        let plugin_config = match &config_guard.plugins {
+            Some(config) => config.clone(),
+            None => return Ok(arguments),
+        };
+        drop(config_guard);
+
+        // Build plugin chain for this server (request phase)
+        use crate::plugin::chain::PluginChain;
+        use crate::plugin::schema::{PluginError, PluginInput, PluginMetadata, PluginPhase};
+        use uuid::Uuid;
+
+        let chain = PluginChain::new(
+            server_name.to_string(),
+            PluginPhase::Request,
+            plugin_manager.clone(),
+            Arc::new(plugin_config.clone()),
+        );
+
+        // Convert arguments to string for plugin processing
+        let raw_content = serde_json::to_string(&arguments).map_err(|e| {
+            ProxyError::InvalidRequest(format!("Failed to serialize arguments: {}", e))
+        })?;
+
+        // Create plugin input
+        let input = PluginInput {
+            tool_name: tool_name.to_string(),
+            raw_content,
+            max_tokens: None,
+            metadata: PluginMetadata {
+                request_id: Uuid::new_v4().to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                server_name: server_name.to_string(),
+                phase: PluginPhase::Request,
+                user_query: None,
+                tool_arguments: Some(arguments.clone()),
+            },
+        };
+
+        // Execute plugin chain
+        let output = match chain.execute(input.clone()).await {
+            Ok(output) => {
+                // Check if plugin blocked the request
+                if !output.continue_ {
+                    return Err(ProxyError::InvalidRequest(output.error.unwrap_or_else(
+                        || "Request blocked by security plugin".to_string(),
+                    )));
+                }
+                output
+            }
+            Err(PluginError::Timeout { .. }) => {
+                tracing::warn!("Request plugin timed out, using original arguments");
+                return Ok(arguments);
+            }
+            Err(e) => {
+                tracing::warn!("Request plugin failed: {}, using original arguments", e);
+                return Ok(arguments);
+            }
+        };
+
+        // Parse the modified text back to JSON
+        let modified_arguments: Value = match serde_json::from_str(&output.text) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("Plugin output is not valid JSON, returning original: {}", e);
+                // If plugin output is not valid JSON, fall back to original
+                arguments
+            }
+        };
+
+        Ok(modified_arguments)
+    }
+
+    /// Apply response-phase plugins to modify server response
+    async fn apply_response_plugins(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        result: Value,
+        max_tokens: Option<u32>,
+        tool_arguments: Option<Value>,
+    ) -> Result<Value> {
+        // Check if plugins are configured
+        let plugin_manager = match &self.state.plugin_manager {
+            Some(manager) => manager,
+            None => return Ok(result), // No plugins configured
+        };
+
+        // Get plugin config from state
+        let config_guard = self.state.config.read().await;
+        let plugin_config = match &config_guard.plugins {
+            Some(config) => config.clone(),
+            None => return Ok(result),
+        };
+        drop(config_guard);
+
+        // Build plugin chain for this server
+        use crate::plugin::chain::PluginChain;
+        use crate::plugin::schema::{PluginInput, PluginMetadata, PluginPhase};
+        use uuid::Uuid;
+
+        let chain = PluginChain::new(
+            server_name.to_string(),
+            PluginPhase::Response,
+            plugin_manager.clone(),
+            Arc::new(plugin_config.clone()),
+        );
+
+        // Convert result to string for plugin processing
+        let raw_content = serde_json::to_string(&result).map_err(|e| {
+            ProxyError::InvalidRequest(format!("Failed to serialize response: {}", e))
+        })?;
+
+        // Create plugin input (max_tokens and tool_arguments passed from handle_call)
+        let input = PluginInput {
+            tool_name: tool_name.to_string(),
+            raw_content,
+            max_tokens,
+            metadata: PluginMetadata {
+                request_id: Uuid::new_v4().to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                server_name: server_name.to_string(),
+                phase: PluginPhase::Response,
+                user_query: None, // TODO: Extract from request context
+                tool_arguments,
+            },
+        };
+
+        // Execute plugin chain (safe execution always returns content)
+        let output = chain.execute_safe(input).await;
+
+        // Parse the modified text back to JSON
+        let modified_result: Value = match serde_json::from_str(&output.text) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("Plugin output is not valid JSON, returning original: {}", e);
+                // If plugin output is not valid JSON, fall back to original
+                result
+            }
+        };
+
+        Ok(modified_result)
     }
 
     /// Clear the tools/list cache
