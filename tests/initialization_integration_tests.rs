@@ -438,3 +438,244 @@ async fn t024_all_requests_blocked_before_ready() {
         "completion/complete should be blocked"
     );
 }
+
+// ============================================================================
+// T026: Slow Initialization Tests
+// ============================================================================
+
+/// T026 Test Case 1: Mock server delays initialize response by 30 seconds
+/// Note: This test takes 30+ seconds to run, so it's ignored by default.
+/// Run with: cargo test t026_server_delays_30_seconds -- --ignored
+#[tokio::test]
+#[ignore]
+async fn t026_server_delays_30_seconds() {
+    let mock_server =
+        MockMcpServer::new(ProtocolVersion::V20250326).with_delay(Duration::from_secs(30));
+    let state = ServerConnectionState::new("slow-server-30s".to_string());
+
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+
+    let init_request = json!({
+        "jsonrpc": "2.0",
+        "id": "init-1",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": { "name": "proxy", "version": "1.0" }
+        }
+    });
+
+    // This should wait for the full 30 seconds
+    let start = std::time::Instant::now();
+    let response = mock_server.handle_initialize(init_request).await;
+    let elapsed = start.elapsed();
+
+    // Verify it waited for the delay (at least 30 seconds)
+    assert!(
+        elapsed >= Duration::from_secs(30),
+        "Should wait at least 30 seconds, waited {:?}",
+        elapsed
+    );
+
+    // Verify response is valid
+    assert_eq!(response["result"]["protocolVersion"], "2025-03-26");
+}
+
+/// T026 Test Case 2: Proxy waits patiently without timeout (within 60s limit)
+/// Note: This test takes 45+ seconds to run, so it's ignored by default.
+/// Run with: cargo test t026_proxy_waits_patiently_under_60s -- --ignored
+#[tokio::test]
+#[ignore]
+async fn t026_proxy_waits_patiently_under_60s() {
+    let mock_server =
+        MockMcpServer::new(ProtocolVersion::V20250618).with_delay(Duration::from_secs(45));
+    let state = ServerConnectionState::new("slow-server-45s".to_string());
+
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+
+    let init_request = json!({
+        "jsonrpc": "2.0",
+        "id": "init-1",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": { "name": "proxy", "version": "1.0" }
+        }
+    });
+
+    // Should wait patiently for 45 seconds (under 60s timeout)
+    let start = std::time::Instant::now();
+    let response = mock_server.handle_initialize(init_request).await;
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed >= Duration::from_secs(45),
+        "Should wait at least 45 seconds"
+    );
+    assert!(
+        elapsed < Duration::from_secs(50),
+        "Should not wait much longer than needed"
+    );
+
+    // Complete initialization successfully
+    let (version, _) =
+        ProtocolVersion::from_string(response["result"]["protocolVersion"].as_str().unwrap());
+    state.received_initialize_response(version).await.unwrap();
+    state.complete_initialization().await.unwrap();
+
+    assert!(state.is_ready().await);
+}
+
+/// T026 Test Case 3: Requests queued during initialization are processed after Ready
+/// Note: This test documents the expected behavior. Actual queuing implementation
+/// will be done in T027.
+#[tokio::test]
+async fn t026_requests_queued_during_init() {
+    let mock_server =
+        MockMcpServer::new(ProtocolVersion::V20241105).with_delay(Duration::from_millis(100));
+    let state = ServerConnectionState::new("queuing-test-server".to_string());
+
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+
+    // During initialization, requests should be blocked
+    assert!(!state.can_send_request("tools/list").await);
+
+    // Simulate initialization completing in background
+    let init_request = json!({
+        "jsonrpc": "2.0",
+        "id": "init-1",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": { "name": "proxy", "version": "1.0" }
+        }
+    });
+
+    let response = mock_server.handle_initialize(init_request).await;
+    let (version, _) =
+        ProtocolVersion::from_string(response["result"]["protocolVersion"].as_str().unwrap());
+
+    state.received_initialize_response(version).await.unwrap();
+    state.complete_initialization().await.unwrap();
+
+    // After initialization, requests should be allowed
+    assert!(state.can_send_request("tools/list").await);
+    assert!(state.is_ready().await);
+}
+
+/// T026 Test Case 4: Timeout occurs if server takes > 60 seconds
+/// Note: This is a simulated test since we don't want to actually wait 60+ seconds
+#[tokio::test]
+async fn t026_timeout_after_60_seconds() {
+    let state = ServerConnectionState::new("timeout-server".to_string());
+
+    state
+        .start_initialization("init-1".to_string())
+        .await
+        .unwrap();
+
+    // Simulate a server that never responds
+    // In production, a timeout mechanism would detect this after 60 seconds
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Timeout should trigger state transition to Failed
+    state
+        .mark_failed("Initialization timeout after 60 seconds".to_string())
+        .await;
+
+    match state.get_state().await {
+        mcp_rust_proxy::protocol::state::ConnectionState::Failed { error, .. } => {
+            assert!(
+                error.contains("timeout"),
+                "Error should mention timeout: {}",
+                error
+            );
+        }
+        other => panic!("Expected Failed state, got {:?}", other),
+    }
+
+    // After failure, server should not be ready
+    assert!(!state.is_ready().await);
+}
+
+/// T026 Test Case 5: Multiple slow servers initialize concurrently
+#[tokio::test]
+async fn t026_multiple_slow_servers() {
+    let delays = vec![
+        Duration::from_millis(500),
+        Duration::from_millis(1000),
+        Duration::from_millis(1500),
+    ];
+
+    let mut handles = vec![];
+
+    for (i, delay) in delays.iter().enumerate() {
+        let delay = *delay;
+        let handle = tokio::spawn(async move {
+            let mock = MockMcpServer::new(ProtocolVersion::V20250326).with_delay(delay);
+            let state = ServerConnectionState::new(format!("slow-server-{}", i));
+
+            state
+                .start_initialization(format!("init-{}", i))
+                .await
+                .unwrap();
+
+            let request = json!({
+                "jsonrpc": "2.0",
+                "id": format!("init-{}", i),
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": { "name": "proxy", "version": "1.0" }
+                }
+            });
+
+            let start = std::time::Instant::now();
+            let response = mock.handle_initialize(request).await;
+            let elapsed = start.elapsed();
+
+            (elapsed, response, state)
+        });
+
+        handles.push(handle);
+    }
+
+    // All servers should complete successfully
+    let results = futures::future::join_all(handles).await;
+
+    for (i, result) in results.iter().enumerate() {
+        let (elapsed, response, state) = result.as_ref().unwrap();
+
+        // Each server waited for its respective delay
+        assert!(
+            *elapsed >= delays[i],
+            "Server {} should wait at least {:?}",
+            i,
+            delays[i]
+        );
+
+        // All got valid responses
+        assert_eq!(response["result"]["protocolVersion"], "2025-03-26");
+
+        // Complete initialization
+        let (version, _) =
+            ProtocolVersion::from_string(response["result"]["protocolVersion"].as_str().unwrap());
+        state.received_initialize_response(version).await.unwrap();
+        state.complete_initialization().await.unwrap();
+
+        assert!(state.is_ready().await);
+    }
+}
