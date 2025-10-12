@@ -76,6 +76,18 @@ pub mod mcp {
     }
 }
 
+// Protocol version support modules
+pub mod adapter;
+pub mod error;
+pub mod handshake;
+pub mod state;
+pub mod version;
+
+// Re-exports for convenience
+pub use adapter::ProtocolAdapter;
+pub use error::ProtocolError;
+pub use version::ProtocolVersion;
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
