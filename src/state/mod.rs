@@ -56,6 +56,9 @@ pub struct ServerInfo {
     pub last_access_time: Arc<RwLock<Option<DateTime<Utc>>>>,
     pub log_subscribers: Arc<DashMap<String, tokio::sync::mpsc::UnboundedSender<LogEntry>>>,
     pub logger: Option<Arc<ServerLogger>>,
+
+    // T021: Protocol connection state for initialization tracking
+    pub connection_state: Option<Arc<ServerConnectionState>>,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -209,6 +212,7 @@ impl ServerInfo {
             last_access_time: Arc::new(RwLock::new(None)),
             log_subscribers: Arc::new(DashMap::new()),
             logger: None,
+            connection_state: None, // T021: Will be set during connection
         }
     }
 

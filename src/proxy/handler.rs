@@ -849,8 +849,24 @@ impl RequestHandler {
         method: &str,
         params: Option<&Value>,
     ) -> Result<Value> {
-        // Update last access time
+        // T025: Check if server is ready before forwarding request
         if let Some(server_info) = self.state.servers.get(server_name) {
+            if let Some(connection_state) = &server_info.connection_state {
+                // Check if request can be sent in current state
+                if !connection_state.can_send_request(method).await {
+                    tracing::debug!(
+                        server = server_name,
+                        method = method,
+                        "Request blocked - server not ready"
+                    );
+                    return Err(ProxyError::ServerNotReady(format!(
+                        "Server '{}' is not ready to handle '{}' requests. Server is still initializing.",
+                        server_name, method
+                    )));
+                }
+            }
+
+            // Update last access time
             let mut last_access = server_info.last_access_time.write().await;
             *last_access = Some(chrono::Utc::now());
         }
