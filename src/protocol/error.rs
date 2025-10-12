@@ -37,6 +37,12 @@ pub enum ProtocolError {
     #[error("Invalid state transition from {from} to {to}")]
     InvalidStateTransition { from: String, to: String },
 
+    #[error("Unsupported notification '{method}' for protocol version {version:?}")]
+    UnsupportedNotification {
+        method: String,
+        version: ProtocolVersion,
+    },
+
     #[error("JSON parsing error: {0}")]
     JsonError(#[from] serde_json::Error),
 
