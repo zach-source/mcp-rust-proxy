@@ -87,6 +87,7 @@ impl AppState {
             shutdown_tx,
             context_tracker: Arc::new(RwLock::new(None)),
             plugin_manager,
+            server_versions: Arc::new(DashMap::new()),
         });
 
         (state, shutdown_rx)

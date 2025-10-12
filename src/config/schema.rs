@@ -124,6 +124,10 @@ pub struct ServerHealthCheckConfig {
 }
 
 // Default value functions
+fn default_enabled() -> bool {
+    true
+}
+
 fn default_restart_on_failure() -> bool {
     true
 }

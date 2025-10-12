@@ -3,6 +3,7 @@ pub mod config;
 pub mod context;
 pub mod error;
 pub mod logging;
+pub mod plugin;
 pub mod protocol;
 pub mod proxy;
 pub mod server;

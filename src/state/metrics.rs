@@ -22,6 +22,12 @@ pub struct Metrics {
     // Health check metrics
     pub health_checks_total: IntCounter,
     pub health_checks_failed: IntCounter,
+
+    // Plugin metrics
+    pub plugin_executions_total: IntCounter,
+    pub plugin_errors_total: IntCounter,
+    pub plugin_timeouts_total: IntCounter,
+    pub plugin_execution_duration: Histogram,
 }
 
 impl Metrics {
@@ -77,6 +83,27 @@ impl Metrics {
         )
         .expect("metric creation failed");
 
+        let plugin_executions_total = IntCounter::new(
+            "mcp_proxy_plugin_executions_total",
+            "Total number of plugin executions",
+        )
+        .expect("metric creation failed");
+        let plugin_errors_total = IntCounter::new(
+            "mcp_proxy_plugin_errors_total",
+            "Total number of plugin errors",
+        )
+        .expect("metric creation failed");
+        let plugin_timeouts_total = IntCounter::new(
+            "mcp_proxy_plugin_timeouts_total",
+            "Total number of plugin timeouts",
+        )
+        .expect("metric creation failed");
+        let plugin_execution_duration = Histogram::with_opts(prometheus::HistogramOpts::new(
+            "mcp_proxy_plugin_execution_duration_seconds",
+            "Plugin execution duration in seconds",
+        ))
+        .expect("metric creation failed");
+
         // Register all metrics
         registry.register(Box::new(total_servers.clone())).unwrap();
         registry
@@ -102,6 +129,18 @@ impl Metrics {
         registry
             .register(Box::new(health_checks_failed.clone()))
             .unwrap();
+        registry
+            .register(Box::new(plugin_executions_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(plugin_errors_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(plugin_timeouts_total.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(plugin_execution_duration.clone()))
+            .unwrap();
 
         Self {
             registry,
@@ -115,6 +154,10 @@ impl Metrics {
             connection_errors,
             health_checks_total,
             health_checks_failed,
+            plugin_executions_total,
+            plugin_errors_total,
+            plugin_timeouts_total,
+            plugin_execution_duration,
         }
     }
 
@@ -167,6 +210,27 @@ impl Metrics {
         if !success {
             self.health_checks_failed.inc();
         }
+    }
+
+    pub fn record_plugin_execution(
+        &self,
+        _plugin_name: &str,
+        _server_name: &str,
+        _phase: &str,
+        duration: std::time::Duration,
+        _success: bool,
+    ) {
+        self.plugin_executions_total.inc();
+        self.plugin_execution_duration
+            .observe(duration.as_secs_f64());
+    }
+
+    pub fn record_plugin_error(&self, _plugin_name: &str, _server_name: &str, _error_type: &str) {
+        self.plugin_errors_total.inc();
+    }
+
+    pub fn record_plugin_timeout(&self, _plugin_name: &str, _server_name: &str) {
+        self.plugin_timeouts_total.inc();
     }
 
     pub fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {

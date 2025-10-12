@@ -84,7 +84,7 @@ fn default_timeout_ms() -> u64 {
     30000 // 30 seconds
 }
 
-fn default_enabled() -> bool {
+pub(crate) fn default_enabled() -> bool {
     true
 }
 
