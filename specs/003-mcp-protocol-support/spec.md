@@ -75,6 +75,7 @@ The proxy provides visibility into which protocol version each backend server is
 
 ### Edge Cases
 
+- **Decision for unsupported versions**: When a backend server reports an unsupported protocol version (e.g., "2026-01-01" or future versions), the proxy logs a WARNING and creates a PassThroughAdapter that treats all messages as opaque JSON-RPC (no translation). This enables forward compatibility with future MCP versions while maintaining explicit logging for operator awareness.
 - What happens when a backend server reports an unsupported protocol version (e.g., 2026-01-01)?
 - How does the system handle a server that changes its reported protocol version after initialization?
 - What happens when a backend server's initialize response is malformed or missing the protocol version field?
@@ -99,7 +100,7 @@ The proxy provides visibility into which protocol version each backend server is
 - **FR-010**: System MUST handle protocol differences in notification formats between versions
 - **FR-011**: System MUST work with all transport types (stdio, HTTP-SSE, WebSocket) regardless of protocol version
 - **FR-012**: System MUST log the detected protocol version for each backend server connection
-- **FR-013**: System MUST provide a fallback behavior when a backend server reports an unsupported protocol version
+- **FR-013**: System MUST handle backend servers reporting unsupported protocol versions by logging a warning and attempting pass-through communication (treating messages as opaque JSON-RPC with no translation)
 - **FR-014**: System MUST re-negotiate protocol version if a backend server connection is re-established
 - **FR-015**: System MUST ensure the initialization sequence (initialize → response → initialized notification) completes before marking a server as "ready" for requests
 
