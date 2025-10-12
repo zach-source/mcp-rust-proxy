@@ -50,51 +50,60 @@ Implement multi-version protocol support for the MCP Rust Proxy to enable seamle
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-**Note**: This project does not have a constitution file at `/Users/ztaylor/repos/workspaces/mcp-rust-proxy/main/.specify/constitution.md`. Using default guidelines from project's CLAUDE.md.
+**Constitution Reference**: `.specify/memory/constitution.md` v1.0.0 (ratified 2025-10-12)
 
-### Guidelines from CLAUDE.md
+### Principle I: Performance First ✅
 
-✅ **Simplicity**:
-- Using established Adapter pattern (well-known design pattern)
-- Clear separation: version detection, state management, translation
-- No premature abstraction (only 3 versions to support)
+- Uses `Arc<DashMap>` for protocol version state (lock-free reads)
+- Zero-copy pass-through adapter when versions match (< 50μs overhead)
+- Message translation designed for < 1ms P99 latency
+- Benchmarks planned for all adapters (criterion integration)
 
-✅ **Incremental Progress**:
-- Can implement versions one at a time
-- Each adapter is independently testable
-- Feature can be enabled per-server (gradual rollout)
+### Principle II: Flexibility Over Rigidity ✅
 
-✅ **Learning from Existing Code**:
-- Follows existing transport abstraction pattern (src/transport/)
-- Reuses ServerState pattern (src/state/)
-- Matches error handling conventions (thiserror)
+- Supports 3 protocol versions simultaneously (2024-11-05, 2025-03-26, 2025-06-18)
+- Works with all transport types (stdio, HTTP-SSE, WebSocket)
+- Adapter pattern enables future version additions without refactoring
+- Graceful fallback for unknown versions (log + pass-through)
 
-✅ **Clear Intent**:
-- ProtocolVersion enum makes versions explicit
-- ProtocolAdapter trait documents contract
-- State machine enforces initialization sequence
+### Principle III: Comprehensive Testing ✅
 
-### Constitution Gates
+- Unit tests for each adapter (6 bidirectional + 1 pass-through)
+- Integration tests for multi-version scenarios
+- Protocol compliance tests for all 3 versions
+- Mock servers for edge cases (slow initialization, crashes, malformed responses)
+- Test plan documented in MCP_TRANSLATION_TEST_SPEC.md
 
-Since no formal constitution exists, using pragmatic gates:
+### Principle IV: Idiomatic Rust Patterns ✅
 
-1. ✅ **Does this add new external dependencies?**
-   - No new external dependencies (uses existing tokio, serde, etc.)
+- ProtocolVersion enum for type-safe version representation
+- ProtocolAdapter trait for polymorphic translation
+- Result<T, ProtocolError> for fallible operations
+- thiserror for error definitions
+- tracing for structured logging
+- cargo fmt enforced (pre-commit hook)
 
-2. ✅ **Does this introduce new abstractions?**
-   - Yes, but justified: ProtocolAdapter trait needed for polymorphic translation
-   - ProtocolVersion enum needed to represent versions type-safely
+### Principle V: Structured Logging and Observability ✅
 
-3. ✅ **Does this follow project conventions?**
-   - Yes: Matches existing module structure (src/protocol/)
-   - Yes: Uses thiserror for errors
-   - Yes: Uses tracing for logging
-   - Yes: Uses async-trait for async traits
+- Log protocol version on every initialization (INFO level)
+- Log version mismatches (WARN level)
+- Log translation operations (DEBUG level)
+- Structured fields: server_name, protocol_version, source_version, target_version
+- Expose version info via /api/server/{name}/status
 
-4. ✅ **Is this the simplest solution?**
-   - Yes: Adapter pattern is well-understood and appropriate
-   - Alternative (runtime reflection) would be more complex
-   - Alternative (separate proxy instances) would waste resources
+### Principle VI: Backward Compatibility ✅
+
+- All 3 versions supported (no version deprecation)
+- Pass-through for unknown versions (don't fail on future versions)
+- Configuration unchanged (version detected automatically)
+- No breaking changes to proxy API
+
+### Principle VII: Leverage Context7 and Serena ✅
+
+- Used Context7 for MCP specification documentation research
+- Used Serena for understanding existing transport/state patterns
+- Documented usage in quickstart.md
+- Integration points identified using Serena's code navigation
 
 ## Project Structure
 
