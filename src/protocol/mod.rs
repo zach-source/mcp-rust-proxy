@@ -82,6 +82,7 @@ pub mod adapters;
 pub mod error;
 pub mod handshake;
 pub mod state;
+pub mod translation;
 pub mod version;
 
 // Re-exports for convenience
