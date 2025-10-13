@@ -75,4 +75,10 @@ impl ProtocolVersion {
     pub fn supports_output_schema(&self) -> bool {
         matches!(self, Self::V20250618)
     }
+
+    /// Check if this version is deprecated
+    /// T055: V20241105 is considered deprecated
+    pub fn is_deprecated(&self) -> bool {
+        matches!(self, Self::V20241105)
+    }
 }

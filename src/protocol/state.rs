@@ -112,6 +112,23 @@ impl ServerConnectionState {
                     initialized_at: Instant::now(),
                 };
                 *self.last_activity.lock().await = Instant::now();
+
+                // T053: Log successful version negotiation
+                tracing::info!(
+                    server_name = %self.server_name,
+                    protocol_version = %protocol_version.as_str(),
+                    "Protocol version negotiated successfully"
+                );
+
+                // T055: Warn about deprecated versions
+                if protocol_version.is_deprecated() {
+                    tracing::warn!(
+                        server_name = %self.server_name,
+                        protocol_version = %protocol_version.as_str(),
+                        "Server is using deprecated protocol version 2024-11-05. Consider upgrading to 2025-06-18."
+                    );
+                }
+
                 Ok(())
             }
             _ => Err(ProtocolError::InvalidStateTransition {

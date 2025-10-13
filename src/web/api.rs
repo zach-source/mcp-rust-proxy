@@ -178,13 +178,24 @@ async fn list_servers(state: Arc<AppState>) -> Result<impl Reply, Rejection> {
         let health_check_enabled = config.get_server_health_check(&name).is_some();
         drop(config);
 
+        // T051: Get protocol version from connection state
+        let protocol_version = if let Some(connection_state) = &info.connection_state {
+            connection_state
+                .protocol_version()
+                .await
+                .map(|v| v.as_str().to_string())
+        } else {
+            None
+        };
+
         servers.push(serde_json::json!({
             "name": name,
             "state": state_str,
             "restart_count": restart_count,
             "health_check_enabled": health_check_enabled,
             "last_health_check": health_check_data,
-            "last_access_time": last_access
+            "last_access_time": last_access,
+            "protocolVersion": protocol_version
         }));
     }
 
@@ -254,6 +265,16 @@ async fn server_status(name: String, state: Arc<AppState>) -> Result<impl Reply,
         let health_check_enabled = config.get_server_health_check(&name).is_some();
         drop(config);
 
+        // T051: Get protocol version from connection state
+        let protocol_version = if let Some(connection_state) = &info.connection_state {
+            connection_state
+                .protocol_version()
+                .await
+                .map(|v| v.as_str().to_string())
+        } else {
+            None
+        };
+
         Ok(warp::reply::with_status(
             warp::reply::json(&serde_json::json!({
                 "name": name,
@@ -261,7 +282,8 @@ async fn server_status(name: String, state: Arc<AppState>) -> Result<impl Reply,
                 "restart_count": *restart_count,
                 "health_check_enabled": health_check_enabled,
                 "last_health_check": health_check_data,
-                "last_access_time": last_access
+                "last_access_time": last_access,
+                "protocolVersion": protocol_version
             })),
             warp::http::StatusCode::OK,
         ))
