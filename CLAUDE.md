@@ -14,7 +14,17 @@ MCP Rust Proxy is a high-performance Model Context Protocol (MCP) proxy server b
 - **Server Management** (`src/server/`): Manages MCP server lifecycle, health checks, and restarts
 - **Transport Layer** (`src/transport/`): Supports stdio, HTTP-SSE, and WebSocket transports
 - **State Management** (`src/state/`): Centralized state using DashMap for thread-safe concurrent access
+- **Protocol Version Support** (`src/protocol/`): Multi-version MCP protocol support with automatic translation
 - **Web UI** (`yew-ui/`): Rust/WASM frontend built with Yew framework
+
+### Protocol Version Support
+- **Supported Versions**: 2024-11-05, 2025-03-26, 2025-06-18
+- **Auto-Detection**: Protocol version detected during initialize handshake
+- **Bidirectional Translation**: Automatic message translation between any version pair
+- **Zero-Copy Optimization**: Pass-through mode when versions match
+- **API Integration**: Protocol version visible in `/api/servers` and `/api/servers/{name}` responses
+- **Structured Logging**: Version negotiation logged with structured fields (server_name, protocol_version)
+- **Deprecation Warnings**: Logs WARN for servers using 2024-11-05 (deprecated)
 
 ### Logging System
 - **File-based Logging**: All MCP server stdout/stderr output is captured to rotating log files
@@ -111,6 +121,13 @@ cargo test
 - If Yew UI fails to build, install trunk: `cargo install trunk --locked`
 - For lock file version errors, delete `Cargo.lock` and rebuild
 - Ensure rustc version is recent (1.70+ recommended)
+
+### Protocol Version Issues
+- **Check server version**: Look for "Protocol version negotiated successfully" in logs with `protocol_version` field
+- **Version mismatch**: Proxy automatically translates between versions - no manual intervention needed
+- **Missing tools**: If tools count is low, check if servers completed initialization (state should be "Ready")
+- **Deprecation warnings**: Servers using 2024-11-05 will show WARN logs suggesting upgrade to 2025-06-18
+- **Debug translation**: Enable DEBUG logs to see translation operations with `source_version` and `target_version` fields
 
 ## Testing with Playwright MCP
 Use the Playwright MCP server to test UI functionality:

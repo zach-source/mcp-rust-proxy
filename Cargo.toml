@@ -58,6 +58,7 @@ num_cpus = "1.16"
 async-trait = "0.1"
 regex = "1.10"
 clap = { version = "4.4", features = ["derive"] }
+url = "2.5"
 
 # Process management
 nix = { version = "0.29", features = ["process", "signal"] }
@@ -77,4 +78,8 @@ criterion = { version = "0.5", features = ["async_tokio"] }
 mockall = "0.13"
 tempfile = "3.12"
 tokio-test = "0.4"
+
+[[bench]]
+name = "protocol_benchmarks"
+harness = false
 

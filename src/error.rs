@@ -24,6 +24,9 @@ pub enum ProxyError {
     #[error("Server not found: {0}")]
     ServerNotFound(String),
 
+    #[error("Server not ready: {0}")]
+    ServerNotReady(String),
+
     #[error("Invalid request: {0}")]
     InvalidRequest(String),
 

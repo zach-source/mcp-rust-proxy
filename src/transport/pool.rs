@@ -141,7 +141,7 @@ impl ConnectionPool {
         // Step 2: Send initialized notification
         let initialized_notification = JsonRpcMessage::V2(JsonRpcV2Message::Notification(
             crate::protocol::JsonRpcNotification {
-                method: "initialized".to_string(),
+                method: "notifications/initialized".to_string(),
                 params: None,
             },
         ));

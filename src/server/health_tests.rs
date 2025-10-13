@@ -370,6 +370,7 @@ mod tests {
                     last_access_time: Arc::new(tokio::sync::RwLock::new(None)),
                     log_subscribers: Arc::new(dashmap::DashMap::new()),
                     logger: None,
+                    connection_state: None, // T021: No connection state for this test
                 },
             )
             .await;

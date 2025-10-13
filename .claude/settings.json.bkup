@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "sessionStart": [
+      {
+        "description": "Initialize context tracing session",
+        "command": ".claude/hooks/session-start.sh"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "description": "Prompt for session feedback",
+        "command": ".claude/hooks/session-end.sh"
+      }
+    ],
+    "postToolUse": [
+      {
+        "description": "Record response_id after MCP tool calls",
+        "matchers": [
+          {
+            "tool": "mcp__proxy__*",
+            "negate": ["mcp__proxy__tracing__*"]
+          }
+        ],
+        "command": ".claude/hooks/post-tool-use.sh"
+      }
+    ]
+  }
+}

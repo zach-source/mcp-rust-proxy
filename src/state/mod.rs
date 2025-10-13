@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::context::tracker::ContextTracker;
 use crate::error::Result;
 use crate::logging::ServerLogger;
+use crate::protocol::ServerConnectionState;
 use crate::transport::pool::ConnectionPool;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -41,6 +42,8 @@ pub struct AppState {
     pub context_tracker: Arc<RwLock<Option<Arc<ContextTracker>>>>,
     pub plugin_manager: Option<Arc<crate::plugin::PluginManager>>,
     pub server_versions: Arc<DashMap<String, ServerVersion>>,
+    /// Protocol connection states per server (for initialization tracking)
+    pub connection_states: Arc<DashMap<String, Arc<ServerConnectionState>>>,
 }
 
 #[derive(Clone)]
@@ -53,6 +56,9 @@ pub struct ServerInfo {
     pub last_access_time: Arc<RwLock<Option<DateTime<Utc>>>>,
     pub log_subscribers: Arc<DashMap<String, tokio::sync::mpsc::UnboundedSender<LogEntry>>>,
     pub logger: Option<Arc<ServerLogger>>,
+
+    // T021: Protocol connection state for initialization tracking
+    pub connection_state: Option<Arc<ServerConnectionState>>,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -91,6 +97,7 @@ impl AppState {
             context_tracker: Arc::new(RwLock::new(None)),
             plugin_manager,
             server_versions,
+            connection_states: Arc::new(DashMap::new()),
         });
 
         (state, shutdown_rx)
@@ -205,6 +212,7 @@ impl ServerInfo {
             last_access_time: Arc::new(RwLock::new(None)),
             log_subscribers: Arc::new(DashMap::new()),
             logger: None,
+            connection_state: None, // T021: Will be set during connection
         }
     }
 
