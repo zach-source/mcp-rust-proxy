@@ -74,11 +74,24 @@ rl.on('line', (line) => {
 
       logger.info('Starting Claude Agent SDK query...');
 
+      // Build system prompt to encourage MCP tool usage
+      const systemPrompt = `You are a context aggregation assistant with access to MCP servers.
+
+When answering user queries:
+1. ALWAYS check available MCP tools first before using your training data
+2. Prefer using context7 for documentation and library information
+3. Use serena for codebase-specific questions
+4. Combine information from multiple sources when relevant
+5. Cite which MCP server provided each piece of information
+
+Your goal is to provide accurate, up-to-date information by leveraging the MCP servers.`;
+
       for await (const message of query({
         prompt: userQuery,
         options: {
           mcpServers: mcpServerConfigs,
           allowedTools,
+          systemPrompt,
         },
       })) {
         logger.info('Received message from Claude', { type: message.type });
