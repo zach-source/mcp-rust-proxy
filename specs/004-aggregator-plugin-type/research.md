@@ -37,30 +37,46 @@ score = (keyword_match_score * 0.4) + (freshness_score * 0.3) + (server_reputati
 
 ---
 
-### 2. Concurrent Query Strategy
+### 2. Concurrent Query Strategy and Connection Pool Usage
 
-**Decision**: Use tokio::spawn with timeout per server, collect results with futures::join_all.
+**Decision**: Reuse proxy's existing stdio connection pool to query MCP servers, using tokio::spawn for parallelism.
 
 **Rationale**:
-1. **Parallelism**: Queries all servers simultaneously (reduces total time from sum to max)
-2. **Timeout Handling**: Individual timeouts prevent slow servers from blocking aggregation
-3. **Partial Success**: Can return results even if some servers fail
-4. **Existing Pattern**: Matches proxy's forward_to_all_servers implementation
+1. **Connection Reuse**: MCP servers already connected via stdio (context7, serena, etc.) - don't create duplicate connections
+2. **Protocol Compatibility**: Existing connections have completed initialization and protocol version negotiation
+3. **Parallelism**: Queries all servers simultaneously using the connection pool's get() method
+4. **Timeout Handling**: Individual timeouts prevent slow servers from blocking aggregation
+5. **Partial Success**: Can return results even if some servers fail
+6. **Existing Pattern**: Matches proxy's forward_to_all_servers implementation in handler.rs
 
 **Alternatives Considered**:
-- **Alternative 1**: Sequential queries (one server at a time)
+- **Alternative 1**: Create separate stdio connections for aggregator
+  - **Rejected**: Wasteful (duplicate processes), breaks connection pooling, requires re-initialization
+- **Alternative 2**: Sequential queries (one server at a time)
   - **Rejected**: Would take 10-50 seconds for 10 servers (exceeds 5-second target)
-- **Alternative 2**: Stream results as they arrive
+- **Alternative 3**: Stream results as they arrive
   - **Rejected**: Requires ranking after all results collected anyway (can't stream ranked results)
 
-**Implementation Pattern** (from existing code):
+**Implementation Pattern** (from existing proxy code):
 ```rust
-let futures: Vec<_> = servers.iter().map(|server| {
-    tokio::spawn(query_server(server, query.clone()))
-}).collect();
+// Get connection from existing pool (already initialized with protocol version)
+let conn = state.connection_pool.get(server_name).await?;
 
-let results = futures::join_all(futures).await;
+// Query using appropriate MCP method (tools/call, resources/read, etc.)
+let request = json!({
+    "jsonrpc": "2.0",
+    "method": "tools/call",  // or appropriate method
+    "params": { "name": tool_name, "arguments": query_args },
+    "id": request_id
+});
+
+conn.send(request_bytes).await?;
+let response = conn.recv().await?;
+
+// Protocol adapter automatically translates response if needed
 ```
+
+**Critical Implementation Note**: The aggregator runs inside the proxy process and has access to AppState, which contains the connection_pool. This is why it must be a Rust-native tool handler (like tracing_tools.rs) rather than an external JavaScript plugin.
 
 ---
 

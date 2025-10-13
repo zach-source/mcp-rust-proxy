@@ -7,7 +7,9 @@
 
 Implement an aggregator plugin system that allows LLM agents to query multiple MCP servers (context7, serena, etc.) through a single tool call, receiving ranked and deduplicated results optimized for context efficiency. The aggregator will query configured servers concurrently, rank results by relevance using heuristic scoring, combine and deduplicate responses, and return a prioritized subset that reduces context waste by 40-60% while preserving high-quality information.
 
-**Technical Approach**: Extend the existing JavaScript plugin system with a new "aggregator" plugin type. Aggregator plugins receive user queries, dispatch concurrent requests to configured MCP servers via the proxy's connection pool, apply heuristic ranking (keyword matching, result freshness, server reputation), deduplicate similar results, and return top-N ranked items. Configuration stored in existing plugin config format, with server selection rules and ranking weights.
+**Technical Approach**: Create a new aggregator tool handler (Rust-native, not JavaScript plugin) that queries configured MCP servers through the proxy's existing stdio connection pool. The aggregator receives user queries, dispatches concurrent requests to selected MCP servers using the same connection pool that serves normal proxy requests, collects responses, applies heuristic ranking (keyword matching, result freshness, server reputation), deduplicates similar results, and returns top-N ranked items. Server selection and ranking configuration stored in existing config file format.
+
+**Key Constraint**: The aggregator MUST reuse the proxy's existing stdio connections to MCP servers (context7, serena, etc.) rather than creating separate connections. This ensures protocol version compatibility is maintained and connection pooling benefits are preserved.
 
 ## Technical Context
 
@@ -121,19 +123,15 @@ specs/004-aggregator-plugin-type/
 
 ```
 src/
-├── plugin/                    # EXISTING: Plugin system
-│   ├── aggregator/            # NEW: Aggregator plugin implementation
-│   │   ├── mod.rs
-│   │   ├── query.rs           # Query parsing and server selection
-│   │   ├── ranking.rs         # Heuristic ranking algorithms
-│   │   ├── dedup.rs           # Result deduplication
-│   │   └── aggregation.rs     # Main aggregation orchestration
-│   ├── mod.rs                 # MODIFIED: Register aggregator plugin type
-│   ├── chain.rs               # EXISTING: Plugin execution chain
-│   └── schema.rs              # MODIFIED: Add AggregatorPlugin type
+├── aggregator/                # NEW: Aggregator system (Rust-native, not JavaScript plugin)
+│   ├── mod.rs                 # Public API
+│   ├── query.rs               # Query parsing and server selection
+│   ├── ranking.rs             # Heuristic ranking algorithms
+│   ├── dedup.rs               # Result deduplication
+│   └── orchestrator.rs        # Main aggregation orchestration using connection pool
 ├── proxy/                     # EXISTING: Proxy logic
 │   ├── aggregator_tools.rs    # NEW: Aggregator tool handler (like tracing_tools.rs)
-│   └── handler.rs             # MODIFIED: Register aggregator tool
+│   └── handler.rs             # MODIFIED: Register aggregator tool in tools/call handler
 └── config/                    # EXISTING: Configuration
     └── schema.rs              # MODIFIED: Add aggregator config section
 
@@ -147,13 +145,14 @@ tests/
     └── aggregator_integration_tests.rs
 ```
 
-**Structure Decision**: Using **Single Project** structure (extends existing proxy). Aggregator is a new plugin type integrated into the existing plugin system architecture, following the pattern of security-plugin and curation-plugin but with multi-server query orchestration.
+**Structure Decision**: Using **Single Project** structure (extends existing proxy). Aggregator is implemented as a Rust-native tool handler (NOT a JavaScript plugin) following the pattern of `tracing_tools.rs` and `server_tools.rs`. This allows direct access to the proxy's connection pool and state.
 
 **Key Integration Points**:
-1. **Plugin system**: New plugin type extends existing PluginPhase enum
-2. **Proxy handler**: New aggregator tool handler (similar to tracing_tools, server_tools)
-3. **Connection pool**: Reuse existing pool for querying backend servers
-4. **Configuration**: Extends existing plugins section with aggregator-specific settings
+1. **Connection Pool** (`src/transport/pool.rs`): Aggregator uses existing stdio connections via `pool.get(server_name)` to query MCP servers
+2. **Proxy handler** (`src/proxy/handler.rs`): New aggregator tool registered in tools/call handler (pattern: `mcp__proxy__aggregator__*`)
+3. **State** (`src/state/mod.rs`): Access to server list and connection states via AppState
+4. **Configuration** (`src/config/schema.rs`): New aggregator section in config YAML
+5. **Protocol Adapters**: Aggregator benefits from existing protocol version translation (queries work across all MCP versions)
 
 ## Complexity Tracking
 
