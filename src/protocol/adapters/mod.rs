@@ -1,9 +1,13 @@
 mod pass_through;
+mod v20241105_to_v20250326;
 mod v20241105_to_v20250618;
+mod v20250326_to_v20241105;
 mod v20250618_to_v20241105;
 
 pub use pass_through::PassThroughAdapter;
+pub use v20241105_to_v20250326::V20241105ToV20250326Adapter;
 pub use v20241105_to_v20250618::V20241105ToV20250618Adapter;
+pub use v20250326_to_v20241105::V20250326ToV20241105Adapter;
 pub use v20250618_to_v20241105::V20250618ToV20241105Adapter;
 
 use crate::protocol::{ProtocolAdapter, ProtocolVersion};

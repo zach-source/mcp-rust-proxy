@@ -107,9 +107,7 @@ fn t037_all_content_variants_in_v1() {
 
 #[test]
 fn t037_all_content_variants_in_v2() {
-    use mcp_rust_proxy::types::mcp::v20250618::ResourceContentsV2;
-
-    // v2 has: Text, Image, Audio, Resource
+    // v2 has: Text, Image, Audio, Resource (still uses ResourceContentsV1)
     let variants = vec![
         ContentV2::Text {
             text: "test".to_string(),
@@ -123,10 +121,8 @@ fn t037_all_content_variants_in_v2() {
             mime_type: "audio/mp3".to_string(),
         },
         ContentV2::Resource {
-            resource: ResourceContentsV2 {
+            resource: ResourceContentsV1 {
                 uri: "file:///test".to_string(),
-                name: "test".to_string(),
-                title: None,
                 mime_type: None,
                 text: Some("t".to_string()),
                 blob: None,
