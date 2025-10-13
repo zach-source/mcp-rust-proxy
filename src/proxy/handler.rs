@@ -873,18 +873,40 @@ impl RequestHandler {
 
         let conn = self.state.connection_pool.get(server_name).await?;
 
-        let request = serde_json::json!({
+        let mut request = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
             "params": params.cloned().unwrap_or(serde_json::json!({})),
             "id": 1
         });
 
+        // T047: Translate request using protocol adapter if available
+        if let Some(server_info) = self.state.servers.get(server_name) {
+            if let Some(connection_state) = &server_info.connection_state {
+                if let Some(adapter) = connection_state.get_adapter().await {
+                    request = adapter.translate_request(request).await.map_err(|e| {
+                        ProxyError::InvalidRequest(format!("Translation error: {}", e))
+                    })?;
+                }
+            }
+        }
+
         let request_bytes = bytes::Bytes::from(format!("{}\n", request.to_string()));
         conn.send(request_bytes).await?;
 
         let response_bytes = conn.recv().await?;
-        let response: Value = serde_json::from_slice(&response_bytes)?;
+        let mut response: Value = serde_json::from_slice(&response_bytes)?;
+
+        // T047: Translate response using protocol adapter if available
+        if let Some(server_info) = self.state.servers.get(server_name) {
+            if let Some(connection_state) = &server_info.connection_state {
+                if let Some(adapter) = connection_state.get_adapter().await {
+                    response = adapter.translate_response(response).await.map_err(|e| {
+                        ProxyError::InvalidRequest(format!("Translation error: {}", e))
+                    })?;
+                }
+            }
+        }
 
         // Check for error
         if let Some(error) = response.get("error") {
