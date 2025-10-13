@@ -79,3 +79,7 @@ mockall = "0.13"
 tempfile = "3.12"
 tokio-test = "0.4"
 
+[[bench]]
+name = "protocol_benchmarks"
+harness = false
+
