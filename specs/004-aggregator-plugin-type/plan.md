@@ -7,20 +7,25 @@
 
 Implement an aggregator plugin system that allows LLM agents to query multiple MCP servers (context7, serena, etc.) through a single tool call, receiving ranked and deduplicated results optimized for context efficiency. The aggregator will query configured servers concurrently, rank results by relevance using heuristic scoring, combine and deduplicate responses, and return a prioritized subset that reduces context waste by 40-60% while preserving high-quality information.
 
-**Technical Approach**: Create a new aggregator tool handler (Rust-native, not JavaScript plugin) that queries configured MCP servers through the proxy's existing stdio connection pool. The aggregator receives user queries, dispatches concurrent requests to selected MCP servers using the same connection pool that serves normal proxy requests, collects responses, applies heuristic ranking (keyword matching, result freshness, server reputation), deduplicates similar results, and returns top-N ranked items. Server selection and ranking configuration stored in existing config file format.
+**Technical Approach**: Create a new JavaScript plugin (aggregator-plugin) using the Claude Agent SDK (@anthropic-ai/agent npm module). When invoked via the `mcp__proxy__aggregator__context_aggregator` tool, the plugin initializes Claude Agent with configured MCP servers (context7, serena, etc.) registered as tools. Claude Agent SDK handles MCP server communication via stdio, intelligently selects which tools/servers to query based on the user's prompt, aggregates results, and returns optimized context. The Rust proxy manages plugin lifecycle and passes MCP server configurations to the plugin.
 
-**Key Constraint**: The aggregator MUST reuse the proxy's existing stdio connections to MCP servers (context7, serena, etc.) rather than creating separate connections. This ensures protocol version compatibility is maintained and connection pooling benefits are preserved.
+**Key Architecture**: JavaScript plugin + Claude Agent SDK pattern (NOT Rust-native). This leverages:
+- Claude Agent SDK's built-in MCP client support (stdio protocol)
+- SDK's intelligent tool selection and orchestration
+- Existing JavaScript plugin infrastructure (process pool, timeout management)
+- MCP server configs passed from Rust to JavaScript via plugin metadata
 
 ## Technical Context
 
-**Language/Version**: Rust 1.75+
+**Language/Version**:
+- Rust 1.75+ (proxy infrastructure)
+- Node.js 18+ (JavaScript plugin runtime)
+- TypeScript/JavaScript (plugin implementation)
 
 **Primary Dependencies**:
-- tokio 1.40 (async runtime, concurrent server queries)
-- serde 1.0, serde_json 1.0 (JSON serialization for MCP messages)
-- dashmap 6.0 (concurrent state for aggregation tracking)
-- regex 1.10 (keyword matching for ranking)
-- futures 0.3 (concurrent query execution with join_all)
+- **Rust**: tokio 1.40, serde 1.0, serde_json 1.0 (plugin manager integration)
+- **JavaScript**: @anthropic-ai/agent (Claude Agent SDK), @modelcontextprotocol/sdk (MCP client)
+- **Existing**: Plugin process pool, plugin schema types
 
 **Storage**: In-memory only (aggregation results not persisted, query-response lifecycle only)
 
@@ -123,36 +128,46 @@ specs/004-aggregator-plugin-type/
 
 ```
 src/
-├── aggregator/                # NEW: Aggregator system (Rust-native, not JavaScript plugin)
-│   ├── mod.rs                 # Public API
-│   ├── query.rs               # Query parsing and server selection
-│   ├── ranking.rs             # Heuristic ranking algorithms
-│   ├── dedup.rs               # Result deduplication
-│   └── orchestrator.rs        # Main aggregation orchestration using connection pool
+├── plugins/                   # EXISTING: JavaScript plugins directory
+│   └── official/
+│       └── aggregator-plugin/ # NEW: JavaScript plugin for context aggregation
+│           ├── package.json   # Dependencies: @anthropic-ai/agent, @modelcontextprotocol/sdk
+│           ├── index.js       # Main plugin entry point
+│           ├── agent.js       # Claude Agent SDK initialization
+│           └── mcp-client.js  # MCP stdio client setup
 ├── proxy/                     # EXISTING: Proxy logic
-│   ├── aggregator_tools.rs    # NEW: Aggregator tool handler (like tracing_tools.rs)
-│   └── handler.rs             # MODIFIED: Register aggregator tool in tools/call handler
+│   ├── aggregator_tools.rs    # NEW: Tool registration and metadata prep
+│   └── handler.rs             # MODIFIED: Register mcp__proxy__aggregator__* tools
+├── plugin/                    # EXISTING: Plugin manager
+│   └── schema.rs              # MODIFIED: Add MCP server config to PluginMetadata
 └── config/                    # EXISTING: Configuration
-    └── schema.rs              # MODIFIED: Add aggregator config section
+    └── schema.rs              # MODIFIED: Add aggregator plugin config
 
 tests/
-├── unit/
-│   └── aggregator/
-│       ├── ranking_tests.rs
-│       ├── dedup_tests.rs
-│       └── query_tests.rs
-└── integration/
-    └── aggregator_integration_tests.rs
+├── plugin_aggregator_test.rs  # Integration test for aggregator plugin
+└── unit/
+    └── aggregator_tools_tests.rs
 ```
 
-**Structure Decision**: Using **Single Project** structure (extends existing proxy). Aggregator is implemented as a Rust-native tool handler (NOT a JavaScript plugin) following the pattern of `tracing_tools.rs` and `server_tools.rs`. This allows direct access to the proxy's connection pool and state.
+**Structure Decision**: Using **JavaScript Plugin** pattern (like curation-plugin, security-plugin). Aggregator plugin receives MCP server configurations from Rust, spawns stdio connections to servers, registers them with Claude Agent SDK, and lets Claude orchestrate tool usage.
 
 **Key Integration Points**:
-1. **Connection Pool** (`src/transport/pool.rs`): Aggregator uses existing stdio connections via `pool.get(server_name)` to query MCP servers
-2. **Proxy handler** (`src/proxy/handler.rs`): New aggregator tool registered in tools/call handler (pattern: `mcp__proxy__aggregator__*`)
-3. **State** (`src/state/mod.rs`): Access to server list and connection states via AppState
-4. **Configuration** (`src/config/schema.rs`): New aggregator section in config YAML
-5. **Protocol Adapters**: Aggregator benefits from existing protocol version translation (queries work across all MCP versions)
+1. **Plugin Manager** (`src/plugin/manager.rs`): Invokes aggregator plugin when `mcp__proxy__aggregator__context_aggregator` tool is called
+2. **Proxy Handler** (`src/proxy/handler.rs`): Registers aggregator tool, routes calls to plugin manager
+3. **Plugin Metadata** (`src/plugin/schema.rs`): Passes MCP server configs (command, args, env) to JavaScript plugin
+4. **Configuration** (`src/config/schema.rs`): Aggregator plugin config with server list, timeout, system prompt
+5. **Claude Agent SDK** (JavaScript): Handles MCP stdio connections, tool discovery, query orchestration
+
+**Data Flow**:
+```
+1. LLM calls mcp__proxy__aggregator__context_aggregator(query: "...")
+2. Rust proxy → Plugin Manager → spawn aggregator-plugin process
+3. Plugin receives: { rawContent: query, metadata: { mcpServers: [...] } }
+4. Plugin creates Claude Agent with MCP servers as tools
+5. Claude Agent SDK queries MCP servers via stdio as needed
+6. Plugin returns optimized context
+7. Rust proxy returns result to LLM
+```
 
 ## Complexity Tracking
 

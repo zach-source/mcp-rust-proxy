@@ -12,71 +12,112 @@ This document consolidates research findings for implementing an aggregator plug
 
 ## Key Research Findings
 
-### 1. Ranking Algorithm Selection
+### 1. Ranking Algorithm Selection and Anthropic API Integration
 
-**Decision**: Use composite heuristic scoring with keyword matching, result freshness, and server reputation.
+**Decision**: Use Anthropic API (Claude) for semantic ranking and context optimization via JavaScript plugin approach.
 
 **Rationale**:
-1. **Performance**: Heuristic scoring is fast (< 50ms for 100 results) vs semantic/AI-based ranking
-2. **No External Dependencies**: Doesn't require LLM API calls or embedding models
-3. **Tunable**: Weights can be adjusted without retraining models
-4. **Transparent**: Scoring logic is explainable and debuggable
+1. **Quality**: Semantic understanding via Claude provides superior relevance ranking vs heuristics
+2. **Existing Infrastructure**: Proxy already has JavaScript plugin system with Anthropic SDK integration (curation-plugin)
+3. **Token Efficiency**: Claude can summarize/optimize results to reduce context waste beyond simple ranking
+4. **Reusability**: Leverages existing plugin architecture and API key management
+5. **Prompt Engineering**: Can use system prompts to guide aggregation behavior
+
+**Implementation Approach - JavaScript Plugin with Claude Agent SDK**:
+
+The aggregator is a **JavaScript plugin** (like curation-plugin, security-plugin) that uses the Claude Agent SDK (@anthropic-ai/agent npm module). The flow is:
+
+1. **Tool Call**: LLM agent calls `mcp__proxy__aggregator__context_aggregator`
+2. **Plugin Invocation**: Rust proxy invokes JavaScript aggregator plugin
+3. **MCP Registration**: Plugin registers MCP servers (context7, serena) as tools for Claude Agent
+4. **Claude Processing**: Claude Agent SDK receives user query, has access to MCP tools, builds optimized context
+5. **Result Return**: Plugin returns Claude's aggregated context to Rust proxy, which forwards to LLM agent
 
 **Alternatives Considered**:
-- **Alternative 1**: Semantic similarity using embeddings
-  - **Rejected**: Requires embedding model (adds latency, complexity, cost)
-- **Alternative 2**: LLM-based relevance scoring
-  - **Rejected**: Too slow (would exceed 5-second target), adds API dependencies
-- **Alternative 3**: Simple keyword count only
-  - **Rejected**: Too simplistic, doesn't account for result quality or freshness
+- **Alternative 1**: Rust-native orchestrator + JavaScript ranking
+  - **Rejected**: Duplicates work - Claude Agent SDK already handles MCP tool orchestration
+- **Alternative 2**: Pure Rust with Anthropic HTTP API
+  - **Rejected**: Would need to reimplement Claude Agent SDK's MCP integration in Rust
+- **Alternative 3**: Pure heuristic scoring without Claude
+  - **Rejected**: Doesn't leverage Claude's semantic understanding for quality aggregation
 
-**Implementation**:
-```rust
-score = (keyword_match_score * 0.4) + (freshness_score * 0.3) + (server_reputation * 0.2) + (result_length_penalty * 0.1)
+**Architecture**:
 ```
+LLM Agent
+  ↓ calls mcp__proxy__aggregator__context_aggregator(query)
+Rust Proxy (plugin manager)
+  ↓ invokes JavaScript plugin with query
+JavaScript Aggregator Plugin
+  ↓ initializes Claude Agent SDK
+  ↓ registers MCP servers as tools (context7, serena via stdio)
+Claude Agent (via SDK)
+  ↓ decides which MCP tools to call
+  ↓ queries MCP servers as needed
+  ↓ aggregates and optimizes context
+JavaScript Plugin
+  ↓ returns aggregated context
+Rust Proxy
+  ↓ returns result to LLM agent
+```
+
+**Key Benefit**: Leverages Claude Agent SDK's built-in MCP support instead of reimplementing server orchestration.
+
+**API Key Management**: Reuse existing ANTHROPIC_API_KEY from plugin configuration
 
 ---
 
-### 2. Concurrent Query Strategy and Connection Pool Usage
+### 2. MCP Server Access Pattern for JavaScript Plugin
 
-**Decision**: Reuse proxy's existing stdio connection pool to query MCP servers, using tokio::spawn for parallelism.
+**Decision**: JavaScript plugin creates stdio MCP client connections to configured servers, registering them as tools for Claude Agent SDK.
 
 **Rationale**:
-1. **Connection Reuse**: MCP servers already connected via stdio (context7, serena, etc.) - don't create duplicate connections
-2. **Protocol Compatibility**: Existing connections have completed initialization and protocol version negotiation
-3. **Parallelism**: Queries all servers simultaneously using the connection pool's get() method
-4. **Timeout Handling**: Individual timeouts prevent slow servers from blocking aggregation
-5. **Partial Success**: Can return results even if some servers fail
-6. **Existing Pattern**: Matches proxy's forward_to_all_servers implementation in handler.rs
+1. **Claude Agent SDK Integration**: SDK natively supports MCP servers as tools via stdio protocol
+2. **Existing Pattern**: Matches how curation-plugin would integrate with MCP servers
+3. **Server Discovery**: Plugin receives list of MCP server configurations (command, args, env) from Rust proxy
+4. **Stdio Protocol**: Each MCP server (context7, serena) spawns as child process, communicates via stdio
+5. **SDK Orchestration**: Claude Agent SDK handles MCP initialization, tool discovery, and query routing
 
 **Alternatives Considered**:
-- **Alternative 1**: Create separate stdio connections for aggregator
-  - **Rejected**: Wasteful (duplicate processes), breaks connection pooling, requires re-initialization
-- **Alternative 2**: Sequential queries (one server at a time)
-  - **Rejected**: Would take 10-50 seconds for 10 servers (exceeds 5-second target)
-- **Alternative 3**: Stream results as they arrive
-  - **Rejected**: Requires ranking after all results collected anyway (can't stream ranked results)
+- **Alternative 1**: JavaScript plugin calls back to Rust to query MCP servers
+  - **Rejected**: Complex IPC, breaks Claude Agent SDK's native MCP support
+- **Alternative 2**: Rust pre-queries servers, passes results to JS for ranking only
+  - **Rejected**: Loses Claude Agent SDK's intelligent tool selection (Claude decides which servers to query)
+- **Alternative 3**: Reuse proxy's existing connections via shared memory
+  - **Rejected**: Impossible - stdio connections can't be shared across processes
 
-**Implementation Pattern** (from existing proxy code):
-```rust
-// Get connection from existing pool (already initialized with protocol version)
-let conn = state.connection_pool.get(server_name).await?;
+**Implementation Pattern** (JavaScript plugin):
+```javascript
+import { Agent } from '@anthropic-ai/agent';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-// Query using appropriate MCP method (tools/call, resources/read, etc.)
-let request = json!({
-    "jsonrpc": "2.0",
-    "method": "tools/call",  // or appropriate method
-    "params": { "name": tool_name, "arguments": query_args },
-    "id": request_id
+// Plugin receives MCP server configs from Rust
+const servers = input.metadata.mcpServers; // e.g., [{name: "context7", command: "/path", args: []}]
+
+// Create stdio clients for each MCP server
+const mcpClients = servers.map(server => ({
+  name: server.name,
+  transport: new StdioClientTransport({
+    command: server.command,
+    args: server.args,
+    env: server.env
+  })
+}));
+
+// Initialize Claude Agent with MCP servers as tools
+const agent = new Agent({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  mcpServers: mcpClients
 });
 
-conn.send(request_bytes).await?;
-let response = conn.recv().await?;
-
-// Protocol adapter automatically translates response if needed
+// Agent now has access to all MCP server tools
+const result = await agent.run(input.rawContent);  // User query
+return { text: result };  // Aggregated, optimized context
 ```
 
-**Critical Implementation Note**: The aggregator runs inside the proxy process and has access to AppState, which contains the connection_pool. This is why it must be a Rust-native tool handler (like tracing_tools.rs) rather than an external JavaScript plugin.
+**Critical Note**: Plugin spawns **separate** stdio connections to MCP servers (not reusing proxy's connections). This is necessary because:
+- JavaScript plugin runs in separate Node.js process
+- Claude Agent SDK manages its own MCP client lifecycle
+- Allows SDK to handle protocol negotiation and tool discovery automatically
 
 ---
 
