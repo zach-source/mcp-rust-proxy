@@ -183,6 +183,14 @@ plugins:
   defaultTimeoutMs: 30000 # 30 second default timeout
 
   servers:
+    # Aggregator - Multi-server context optimization (special handling)
+    aggregator:
+      response:
+        - name: aggregator-plugin
+          order: 1
+          enabled: true # Enable when ANTHROPIC_API_KEY is set
+          timeoutMs: 10000 # 10 seconds for aggregation
+
     # Context7 - AI-powered curation + prompt injection protection
     context7:
       response:
@@ -202,5 +210,6 @@ plugins:
           order: 1
           enabled: true # Block sensitive data in requests
           timeoutMs: 5000
+
 # Environment variables:
-# - No API key required! Curation plugin uses Claude Agent SDK with CLI session context
+# - ANTHROPIC_API_KEY: Required for aggregator and curation plugins
