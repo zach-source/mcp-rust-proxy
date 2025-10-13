@@ -107,7 +107,7 @@ pub async fn handle_aggregator_tool(
     );
 
     // Get MCP server configs to pass to plugin
-    let mcp_server_configs = get_mcp_server_configs(&state, requested_servers.clone()).await;
+    let mcp_server_configs = get_mcp_server_configs(&state, requested_servers.clone(), query).await;
 
     // Create plugin input with MCP server configs
     let input = PluginInput {
@@ -143,34 +143,71 @@ pub async fn handle_aggregator_tool(
     }))
 }
 
-/// Get MCP server configurations from AppState
+/// Get MCP server configurations from AppState for aggregator
+/// Always includes context7, optionally includes serena for code-related queries
 async fn get_mcp_server_configs(
     state: &Arc<AppState>,
     requested_servers: Option<Vec<String>>,
+    query: &str,
 ) -> Vec<Value> {
     let config = state.config.read().await;
     let mut server_configs = Vec::new();
 
-    for (name, server_config) in &config.servers {
-        // Filter by requested servers if specified
-        if let Some(ref requested) = requested_servers {
-            if !requested.contains(name) {
-                continue;
+    // If specific servers requested, honor that
+    if let Some(ref requested) = requested_servers {
+        for (name, server_config) in &config.servers {
+            if requested.contains(name) && server_config.enabled {
+                server_configs.push(json!({
+                    "name": name,
+                    "command": server_config.command,
+                    "args": server_config.args,
+                    "env": server_config.env
+                }));
             }
         }
-
-        // Only include enabled servers
-        if !server_config.enabled {
-            continue;
-        }
-
-        server_configs.push(json!({
-            "name": name,
-            "command": server_config.command,
-            "args": server_config.args,
-            "env": server_config.env
-        }));
+        return server_configs;
     }
+
+    // Default behavior: Always use context7
+    let mut servers_to_use = vec!["context7"];
+
+    // Add serena if query is about code
+    let query_lower = query.to_lowercase();
+    let code_keywords = [
+        "code",
+        "function",
+        "class",
+        "method",
+        "implementation",
+        "codebase",
+        "repository",
+    ];
+
+    if code_keywords
+        .iter()
+        .any(|keyword| query_lower.contains(keyword))
+    {
+        servers_to_use.push("serena");
+        tracing::info!(query_keywords = ?code_keywords, "Detected code-related query, including serena");
+    }
+
+    for server_name in servers_to_use {
+        if let Some(server_config) = config.servers.get(server_name) {
+            if server_config.enabled {
+                server_configs.push(json!({
+                    "name": server_name,
+                    "command": server_config.command,
+                    "args": server_config.args,
+                    "env": server_config.env
+                }));
+            }
+        }
+    }
+
+    tracing::info!(
+        servers_selected = ?server_configs.iter().filter_map(|s| s.get("name").and_then(|n| n.as_str())).collect::<Vec<_>>(),
+        "Selected MCP servers for aggregation"
+    );
 
     server_configs
 }
