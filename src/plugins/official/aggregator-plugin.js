@@ -69,6 +69,8 @@ rl.on('line', (line) => {
       // Run aggregation via Claude Agent SDK
       let aggregatedResult = '';
       let success = false;
+      let toolCallCount = 0;
+      let totalRawResponseBytes = 0;
 
       logger.info('Starting Claude Agent SDK query...');
 
@@ -80,6 +82,25 @@ rl.on('line', (line) => {
         },
       })) {
         logger.info('Received message from Claude', { type: message.type });
+
+        // Track MCP tool calls
+        if (message.type === 'tool_use') {
+          toolCallCount++;
+          logger.info('MCP tool called', {
+            tool: message.name,
+            callNumber: toolCallCount,
+          });
+        }
+
+        // Track raw MCP response sizes
+        if (message.type === 'tool_result') {
+          const resultSize = JSON.stringify(message.content || '').length;
+          totalRawResponseBytes += resultSize;
+          logger.info('MCP tool result', {
+            size: resultSize,
+            totalRawBytes: totalRawResponseBytes,
+          });
+        }
 
         if (message.type === 'result' && message.subtype === 'success') {
           aggregatedResult = message.result || '';
@@ -95,10 +116,22 @@ rl.on('line', (line) => {
       }
 
       const duration = Date.now() - startTime;
+      const aggregatedBytes = aggregatedResult.length;
+      const reductionPercent =
+        totalRawResponseBytes > 0
+          ? Math.round(
+              ((totalRawResponseBytes - aggregatedBytes) /
+                totalRawResponseBytes) *
+                100,
+            )
+          : 0;
 
       logger.info('Aggregation complete', {
         durationMs: duration,
-        resultLength: aggregatedResult.length,
+        mcpToolCalls: toolCallCount,
+        rawMcpBytes: totalRawResponseBytes,
+        aggregatedBytes,
+        reduction: `${reductionPercent}%`,
         success,
       });
 
@@ -107,8 +140,11 @@ rl.on('line', (line) => {
         continue: true,
         metadata: {
           serversQueried: mcpServers.length,
+          mcpToolCalls: toolCallCount,
+          rawMcpBytes: totalRawResponseBytes,
+          aggregatedBytes,
+          reductionPercent,
           durationMs: duration,
-          resultLength: aggregatedResult.length,
         },
       };
 
