@@ -154,6 +154,30 @@ impl RequestHandler {
                             });
                         }
                     }
+                } else if tool_name.starts_with("mcp__proxy__aggregator__") {
+                    let aggregator_tool =
+                        tool_name.strip_prefix("mcp__proxy__aggregator__").unwrap();
+                    match super::aggregator_tools::handle_aggregator_tool(
+                        aggregator_tool,
+                        arguments,
+                        self.state.clone(),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(e) => {
+                            return Ok(MCPResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id,
+                                result: None,
+                                error: Some(MCPError {
+                                    code: -32603,
+                                    message: e,
+                                    data: None,
+                                }),
+                            });
+                        }
+                    }
                 } else {
                     let call_params = CallParams {
                         tool: tool_name,
@@ -250,8 +274,10 @@ impl RequestHandler {
                         {
                             let tracing_tools = super::tracing_tools::get_tracing_tools();
                             let server_tools = super::server_tools::get_server_tools();
+                            let aggregator_tools = super::aggregator_tools::get_aggregator_tools();
                             tools_array.extend(tracing_tools);
                             tools_array.extend(server_tools);
+                            tools_array.extend(aggregator_tools);
                         }
 
                         // Update cache
