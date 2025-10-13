@@ -13,6 +13,7 @@ A fast and efficient Model Context Protocol (MCP) proxy server written in Rust. 
 ### Core Proxy Features
 - **Multi-Server Proxy**: Aggregate multiple MCP servers into a single endpoint
 - **Multiple Transports**: Support for stdio, HTTP/SSE, and WebSocket transports
+- **Multi-Version Protocol Support**: Automatic translation between MCP protocol versions (2024-11-05, 2025-03-26, 2025-06-18)
 - **Tool Name Prefixing**: Prevent naming conflicts with `mcp__proxy__{server}__{tool}` format
 - **File-based Logging**: All server output captured to rotating log files with real-time streaming
 - **Configuration Management**: YAML/JSON configuration with environment variable substitution

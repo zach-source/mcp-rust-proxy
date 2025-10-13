@@ -38,7 +38,7 @@ fn build_yew_ui() {
 
     let output = Command::new("trunk")
         .current_dir(&yew_ui_dir)
-        .args(&["build", "--release"])
+        .args(["build", "--release"])
         .output();
 
     match output {
@@ -51,7 +51,7 @@ fn build_yew_ui() {
             }
         }
         Err(e) => {
-            println!("cargo:warning=Failed to execute trunk build: {}", e);
+            println!("cargo:warning=Failed to execute trunk build: {e}");
             println!("cargo:warning=You can build it manually with: ./build-yew-ui.sh");
             return;
         }
@@ -63,13 +63,13 @@ fn build_yew_ui() {
 
     // Create target directory
     if let Err(e) = std::fs::create_dir_all(&target_dir) {
-        println!("cargo:warning=Failed to create yew-dist directory: {}", e);
+        println!("cargo:warning=Failed to create yew-dist directory: {e}");
         return;
     }
 
     // Copy all files from dist to yew-dist
     if let Err(e) = copy_dir_all(&dist_dir, &target_dir) {
-        println!("cargo:warning=Failed to copy dist files: {}", e);
+        println!("cargo:warning=Failed to copy dist files: {e}");
         return;
     }
 
