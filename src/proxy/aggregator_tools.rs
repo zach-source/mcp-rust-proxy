@@ -83,9 +83,6 @@ pub async fn handle_aggregator_tool(
         "Processing aggregator query"
     );
 
-    // Get MCP server configurations to pass to plugin
-    let mcp_servers = get_mcp_server_configs(&state, requested_servers).await;
-
     // Check if plugin manager is available
     let plugin_manager = state
         .plugin_manager
@@ -109,6 +106,9 @@ pub async fn handle_aggregator_tool(
         Arc::new(plugin_config),
     );
 
+    // Get MCP server configs to pass to plugin
+    let mcp_server_configs = get_mcp_server_configs(&state, requested_servers.clone()).await;
+
     // Create plugin input with MCP server configs
     let input = PluginInput {
         tool_name: "context_aggregator".to_string(),
@@ -121,6 +121,7 @@ pub async fn handle_aggregator_tool(
             phase: PluginPhase::Response,
             user_query: Some(query.to_string()),
             tool_arguments: Some(arguments.clone()),
+            mcp_servers: Some(mcp_server_configs),
         },
     };
 

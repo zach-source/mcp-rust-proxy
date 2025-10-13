@@ -1001,6 +1001,7 @@ impl RequestHandler {
                 phase: PluginPhase::Request,
                 user_query: None,
                 tool_arguments: Some(arguments.clone()),
+                mcp_servers: None,
             },
         };
 
@@ -1090,6 +1091,7 @@ impl RequestHandler {
                 phase: PluginPhase::Response,
                 user_query: None, // TODO: Extract from request context
                 tool_arguments,
+                mcp_servers: None,
             },
         };
 

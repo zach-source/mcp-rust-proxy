@@ -22,31 +22,54 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
  */
 export async function process(input) {
   try {
-    const query = input.rawContent;
+    const userQuery = input.rawContent;
     const mcpServers = input.metadata?.mcpServers || [];
 
     console.error(
-      `[Aggregator Plugin] Processing query: "${query.substring(0, 100)}..."`,
+      `[Aggregator Plugin] Processing query: "${userQuery.substring(0, 100)}..."`,
     );
     console.error(
       `[Aggregator Plugin] Configured MCP servers: ${mcpServers.map((s) => s.name).join(', ')}`,
     );
 
-    // Initialize Claude Agent SDK with MCP servers
-    const agent = await initializeAgent(mcpServers);
+    // Initialize MCP server configs
+    const { serverConfigs, serverNames } = await initializeAgent(mcpServers);
 
-    // Run aggregation via Claude Agent
-    const result = await agent.run({
-      query,
-      systemPrompt: buildSystemPrompt(),
-    });
+    // Build allowed tools list (all tools from all MCP servers)
+    const allowedTools = serverNames.flatMap((name) => [
+      `mcp__${name}__*`, // Allow all tools from this server
+    ]);
+
+    // Import query function from SDK
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+
+    // Run aggregation via Claude Agent SDK
+    let aggregatedResult = '';
+
+    for await (const message of query({
+      prompt: userQuery,
+      options: {
+        mcpServers: serverConfigs,
+        allowedTools,
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      },
+    })) {
+      if (message.type === 'result' && message.subtype === 'success') {
+        aggregatedResult = message.result || '';
+      } else if (
+        message.type === 'result' &&
+        message.subtype === 'error_during_execution'
+      ) {
+        console.error(`[Aggregator Plugin] Execution error: ${message.error}`);
+      }
+    }
 
     console.error(
-      `[Aggregator Plugin] Aggregation complete, result length: ${result.length} chars`,
+      `[Aggregator Plugin] Aggregation complete, result length: ${aggregatedResult.length} chars`,
     );
 
     return {
-      text: result,
+      text: aggregatedResult,
       continue: true,
       error: null,
     };
@@ -64,12 +87,21 @@ export async function process(input) {
  * Initialize Claude Agent with MCP servers registered as tools
  */
 async function initializeAgent(mcpServers) {
-  // TODO T006: Implement full Agent initialization with MCP clients
-  // For now, return placeholder
+  // Build MCP server configs for Claude Agent SDK
+  const mcpServerConfigs = {};
+
+  for (const server of mcpServers) {
+    mcpServerConfigs[server.name] = {
+      type: 'stdio',
+      command: server.command,
+      args: server.args || [],
+      env: server.env || {},
+    };
+  }
+
   return {
-    run: async ({ query }) => {
-      return `Aggregated context for: ${query}\n(Agent initialization pending T006)`;
-    },
+    serverConfigs: mcpServerConfigs,
+    serverNames: mcpServers.map((s) => s.name),
   };
 }
 

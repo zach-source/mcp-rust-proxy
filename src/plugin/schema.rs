@@ -42,6 +42,10 @@ pub struct PluginMetadata {
     /// Original tool arguments (all parameters from the MCP call)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_arguments: Option<serde_json::Value>,
+
+    /// MCP server configurations (for aggregator plugin)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "mcpServers")]
+    pub mcp_servers: Option<Vec<serde_json::Value>>,
 }
 
 /// Input data passed to plugin processes via stdin
