@@ -189,7 +189,7 @@ plugins:
         - name: aggregator-plugin
           order: 1
           enabled: true # Enable when ANTHROPIC_API_KEY is set
-          timeoutMs: 10000 # 10 seconds for aggregation
+          timeoutMs: 60000 # 60 seconds for aggregation (Claude + MCP servers need time)
 
     # Context7 - AI-powered curation + prompt injection protection
     context7:
