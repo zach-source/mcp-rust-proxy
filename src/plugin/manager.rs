@@ -373,6 +373,7 @@ rl.on('line', async (line) => {
                 phase: PluginPhase::Response,
                 user_query: None,
                 tool_arguments: None,
+                mcp_servers: None,
             },
         };
 
@@ -419,6 +420,7 @@ rl.on('line', () => {
                 phase: PluginPhase::Response,
                 user_query: None,
                 tool_arguments: None,
+                mcp_servers: None,
             },
         };
 

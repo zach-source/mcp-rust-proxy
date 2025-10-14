@@ -249,6 +249,7 @@ mod tests {
                 phase: PluginPhase::Response,
                 user_query: None,
                 tool_arguments: None,
+                mcp_servers: None,
             },
         };
 

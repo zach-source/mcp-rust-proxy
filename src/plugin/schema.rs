@@ -203,6 +203,7 @@ mod tests {
                 phase: PluginPhase::Response,
                 user_query: Some("test query".to_string()),
                 tool_arguments: None,
+                mcp_servers: None,
             },
         };
 
@@ -264,6 +265,7 @@ mod tests {
                 phase: PluginPhase::Request,
                 user_query: None,
                 tool_arguments: None,
+                mcp_servers: None,
             },
         };
 
