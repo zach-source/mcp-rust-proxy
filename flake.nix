@@ -121,19 +121,8 @@
               CARGO_REGISTRIES_CRATES_IO_PROTOCOL = "sparse";
               # RUSTFLAGS = "--cfg rustc_1_82";
 
-              # Override any user-specific linker configuration
-              CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (
-                pkgs.stdenv.isDarwin && target == "x86_64-apple-darwin"
-              ) "cc";
-              CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (
-                pkgs.stdenv.isDarwin && target == "aarch64-apple-darwin"
-              ) "cc";
-              CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = pkgs.lib.optionalString (
-                target == "x86_64-unknown-linux-gnu"
-              ) "cc";
-              CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = pkgs.lib.optionalString (
-                target == "aarch64-unknown-linux-gnu"
-              ) "${pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc}/bin/aarch64-unknown-linux-gnu-gcc";
+              # No explicit linker configuration - let cargo/rustc use defaults
+              # Setting linker to empty string causes "couldn't extract file stem" errors
 
               # Add cross-compilation dependencies
               depsBuildBuild = pkgs.lib.optionals (target == "aarch64-unknown-linux-gnu") [
