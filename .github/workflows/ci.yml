@@ -46,55 +46,48 @@ jobs:
 
   build:
     name: Build
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-linux
-          - os: ubuntu-latest
-            target: aarch64-linux
-          - os: macos-latest
-            target: x86_64-darwin
-          - os: macos-latest
-            target: aarch64-darwin
-    
+        target:
+          - x86_64-linux
+          - aarch64-linux
+          - x86_64-darwin
+          - aarch64-darwin
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v14
-      
+
       - name: Setup Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@v8
-      
+
       - name: Setup Cachix
         uses: cachix/cachix-action@v15
         with:
           name: mcp-rust-proxy
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      
-      - name: Build package
+
+      - name: Build package for ${{ matrix.target }}
         run: |
-          # Build the specific target package
-          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-            nix build .#${{ matrix.target }} -L
-          else
-            # On macOS, only build native targets
-            if [[ "${{ matrix.target }}" == *"darwin"* ]]; then
-              nix build .#${{ matrix.target }} -L
-            else
-              echo "Skipping cross-compilation on macOS"
-            fi
-          fi
-      
+          nix build .#${{ matrix.target }} -L
+
       - name: Test binary
-        if: matrix.target == 'x86_64-linux' || (matrix.os == 'macos-latest' && matrix.target == 'aarch64-darwin')
+        if: matrix.target == 'x86_64-linux'
         run: |
-          # Only test on native platforms
+          # Only test on native x86_64 Linux platform
           if [[ -f result/bin/mcp-rust-proxy ]]; then
-            ./result/bin/mcp-rust-proxy --version
+            ./result/bin/mcp-rust-proxy --help
           fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-rust-proxy-${{ matrix.target }}
+          path: result/bin/mcp-rust-proxy
+          if-no-files-found: warn
 
   docker:
     name: Build Docker image
