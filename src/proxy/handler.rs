@@ -231,7 +231,7 @@ impl RequestHandler {
                                 result: None,
                                 error: Some(MCPError {
                                     code: -32603,
-                                    message: format!("Failed to read proxy resource: {}", e),
+                                    message: format!("Failed to read proxy resource: {e}"),
                                     data: None,
                                 }),
                             });
@@ -349,7 +349,7 @@ impl RequestHandler {
                                 result: None,
                                 error: Some(MCPError {
                                     code: -32601,
-                                    message: format!("Prompt not found: {}", prompt_name),
+                                    message: format!("Prompt not found: {prompt_name}"),
                                     data: None,
                                 }),
                             });
@@ -371,7 +371,7 @@ impl RequestHandler {
                             result: None,
                             error: Some(MCPError {
                                 code: -32601,
-                                message: format!("Method not found: {}", method),
+                                message: format!("Method not found: {method}"),
                                 data: None,
                             }),
                         });
@@ -417,8 +417,7 @@ impl RequestHandler {
             "resources" => self.list_resources(router).await,
             "prompts" => self.list_prompts(router).await,
             _ => Err(ProxyError::InvalidRequest(format!(
-                "Unknown list type: {}",
-                list_type
+                "Unknown list type: {list_type}"
             ))),
         }
     }
@@ -492,8 +491,7 @@ impl RequestHandler {
 
         if !server_enabled {
             return Err(ProxyError::ServerNotFound(format!(
-                "Server '{}' is disabled. Enable it with mcp__proxy__server__enable",
-                server_name
+                "Server '{server_name}' is disabled. Enable it with mcp__proxy__server__enable"
             )));
         }
 
@@ -524,7 +522,7 @@ impl RequestHandler {
             "id": 1
         });
 
-        conn.send(bytes::Bytes::from(format!("{}\n", request.to_string())))
+        conn.send(bytes::Bytes::from(format!("{request}\n")))
             .await?;
 
         // Get response
@@ -570,7 +568,7 @@ impl RequestHandler {
             "id": 1
         });
 
-        conn.send(bytes::Bytes::from(format!("{}\n", request.to_string())))
+        conn.send(bytes::Bytes::from(format!("{request}\n")))
             .await?;
 
         // Get response
@@ -848,10 +846,10 @@ impl RequestHandler {
                 let context = ContextUnit {
                     id: format!("ctx_{}", Uuid::new_v4()),
                     r#type: ContextType::External,
-                    source: format!("{}::{}", server_name, tool_or_resource),
+                    source: format!("{server_name}::{tool_or_resource}"),
                     timestamp: Utc::now(),
                     embedding_id: None,
-                    summary: Some(format!("{} from {}", method, server_name)),
+                    summary: Some(format!("{method} from {server_name}")),
                     version: 1,
                     previous_version_id: None,
                     aggregate_score: 0.0,
@@ -886,8 +884,7 @@ impl RequestHandler {
                         "Request blocked - server not ready"
                     );
                     return Err(ProxyError::ServerNotReady(format!(
-                        "Server '{}' is not ready to handle '{}' requests. Server is still initializing.",
-                        server_name, method
+                        "Server '{server_name}' is not ready to handle '{method}' requests. Server is still initializing."
                     )));
                 }
             }
@@ -911,13 +908,13 @@ impl RequestHandler {
             if let Some(connection_state) = &server_info.connection_state {
                 if let Some(adapter) = connection_state.get_adapter().await {
                     request = adapter.translate_request(request).await.map_err(|e| {
-                        ProxyError::InvalidRequest(format!("Translation error: {}", e))
+                        ProxyError::InvalidRequest(format!("Translation error: {e}"))
                     })?;
                 }
             }
         }
 
-        let request_bytes = bytes::Bytes::from(format!("{}\n", request.to_string()));
+        let request_bytes = bytes::Bytes::from(format!("{request}\n"));
         conn.send(request_bytes).await?;
 
         let response_bytes = conn.recv().await?;
@@ -928,7 +925,7 @@ impl RequestHandler {
             if let Some(connection_state) = &server_info.connection_state {
                 if let Some(adapter) = connection_state.get_adapter().await {
                     response = adapter.translate_response(response).await.map_err(|e| {
-                        ProxyError::InvalidRequest(format!("Translation error: {}", e))
+                        ProxyError::InvalidRequest(format!("Translation error: {e}"))
                     })?;
                 }
             }
@@ -986,7 +983,7 @@ impl RequestHandler {
 
         // Convert arguments to string for plugin processing
         let raw_content = serde_json::to_string(&arguments).map_err(|e| {
-            ProxyError::InvalidRequest(format!("Failed to serialize arguments: {}", e))
+            ProxyError::InvalidRequest(format!("Failed to serialize arguments: {e}"))
         })?;
 
         // Create plugin input
@@ -1076,7 +1073,7 @@ impl RequestHandler {
 
         // Convert result to string for plugin processing
         let raw_content = serde_json::to_string(&result).map_err(|e| {
-            ProxyError::InvalidRequest(format!("Failed to serialize response: {}", e))
+            ProxyError::InvalidRequest(format!("Failed to serialize response: {e}"))
         })?;
 
         // Create plugin input (max_tokens and tool_arguments passed from handle_call)

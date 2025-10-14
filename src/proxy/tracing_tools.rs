@@ -552,7 +552,7 @@ pub async fn handle_tracing_tool(
                 .get("format")
                 .and_then(|v| v.as_str())
                 .unwrap_or("json");
-            let format = OutputFormat::from_str(format_str).unwrap_or(OutputFormat::Json);
+            let format = OutputFormat::parse(format_str).unwrap_or(OutputFormat::Json);
 
             let manifest = storage
                 .query_lineage(response_id)

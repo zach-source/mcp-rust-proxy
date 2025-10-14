@@ -3,13 +3,16 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// Type alias for complex response channel type
+type ResponseChannel = Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<Value, String>>>>>;
+
 /// Queued request waiting for server initialization
 #[derive(Debug, Clone)]
 pub struct QueuedRequest {
     pub request_id: String,
     pub method: String,
     pub params: Option<Value>,
-    pub response_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<Value, String>>>>>,
+    pub response_tx: ResponseChannel,
 }
 
 pub struct RequestRouter {

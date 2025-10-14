@@ -212,11 +212,11 @@ async fn main() -> Result<()> {
 
     // Start cache warmer for instant tool/resource availability
     let cache_warmer_state = state.clone();
-    let cache_warmer_handler = Arc::new(mcp_rust_proxy::proxy::RequestHandler::new(state.clone()));
-    let cache_warmer_handle = tokio::spawn(async move {
+    let _cache_warmer_handler = Arc::new(mcp_rust_proxy::proxy::RequestHandler::new(state.clone()));
+    let _cache_warmer_handle = tokio::spawn(async move {
         let warmer = mcp_rust_proxy::proxy::cache_warmer::CacheWarmer::new(
             cache_warmer_state,
-            cache_warmer_handler,
+            _cache_warmer_handler,
             60, // Refresh every 60 seconds
         );
         warmer.run().await;

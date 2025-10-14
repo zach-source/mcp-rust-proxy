@@ -19,7 +19,7 @@ pub enum OutputFormat {
 
 impl OutputFormat {
     /// Parse output format from string
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "json" => Some(Self::Json),
             "tree" => Some(Self::Tree),
@@ -426,13 +426,10 @@ mod tests {
     }
 
     #[test]
-    fn test_output_format_from_str() {
-        assert_eq!(OutputFormat::from_str("json"), Some(OutputFormat::Json));
-        assert_eq!(OutputFormat::from_str("tree"), Some(OutputFormat::Tree));
-        assert_eq!(
-            OutputFormat::from_str("compact"),
-            Some(OutputFormat::Compact)
-        );
-        assert_eq!(OutputFormat::from_str("invalid"), None);
+    fn test_output_format_parse() {
+        assert_eq!(OutputFormat::parse("json"), Some(OutputFormat::Json));
+        assert_eq!(OutputFormat::parse("tree"), Some(OutputFormat::Tree));
+        assert_eq!(OutputFormat::parse("compact"), Some(OutputFormat::Compact));
+        assert_eq!(OutputFormat::parse("invalid"), None);
     }
 }
