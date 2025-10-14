@@ -49,6 +49,7 @@ async fn test_security_blocks_sensitive_password() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -126,6 +127,7 @@ async fn test_security_blocks_api_key() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -172,6 +174,7 @@ async fn test_security_allows_safe_requests() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -238,6 +241,7 @@ async fn test_security_plugin_only_processes_request_phase() {
             phase: PluginPhase::Response, // Response phase
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -293,6 +297,7 @@ async fn test_security_blocks_bearer_token() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -339,6 +344,7 @@ async fn test_security_blocks_private_key() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
