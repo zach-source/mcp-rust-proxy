@@ -50,6 +50,7 @@ async fn test_curation_flow_with_echo_plugin() {
             phase: PluginPhase::Response,
             user_query: Some("Explain React hooks".to_string()),
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -115,6 +116,7 @@ async fn test_plugin_handles_large_documents() {
             phase: PluginPhase::Response,
             user_query: Some("Summarize documentation".to_string()),
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -167,6 +169,7 @@ async fn test_plugin_chain_simulation() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -230,6 +233,7 @@ async fn test_curation_metadata_preservation() {
             phase: PluginPhase::Response,
             user_query: Some("Test query".to_string()),
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
