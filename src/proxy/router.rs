@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::Mutex;
 
 /// Queued request waiting for server initialization
 #[derive(Debug, Clone)]

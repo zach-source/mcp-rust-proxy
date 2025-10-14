@@ -27,7 +27,7 @@ fn test_adapter_factory_handles_all_version_combinations() {
 
 #[tokio::test]
 async fn test_concurrent_adapter_usage() {
-    use std::sync::Arc;
+    
     use tokio::task::JoinSet;
 
     // Create adapters for different version pairs

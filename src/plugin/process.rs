@@ -207,7 +207,7 @@ impl ProcessPool {
 mod tests {
     use super::*;
     use crate::plugin::schema::{PluginMetadata, PluginPhase};
-    use std::env;
+    
     use std::io::Write;
     use tempfile::NamedTempFile;
 

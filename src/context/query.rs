@@ -219,7 +219,7 @@ pub fn format_manifest(manifest: &LineageManifest, format: OutputFormat) -> Resu
 // ========== Query Service ==========
 
 use crate::context::storage::StorageBackend;
-use crate::context::types::{ContextImpactReport, ContextType, ResponseSummary};
+use crate::context::types::{ContextImpactReport, ContextType};
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
 

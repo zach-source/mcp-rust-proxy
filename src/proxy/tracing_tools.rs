@@ -4,7 +4,6 @@
 //! can call to query lineage data, submit feedback, and track context evolution.
 
 use crate::context::query::{format_manifest, OutputFormat, QueryFilters, QueryService};
-use crate::context::types::FeedbackSubmission;
 use crate::state::AppState;
 use serde_json::{json, Value};
 use std::sync::Arc;

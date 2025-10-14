@@ -5,7 +5,7 @@
 //! - Remaining plugins not executed
 //! - Output from last executed plugin returned
 
-use mcp_rust_proxy::plugin::schema::{PluginOutput, PluginPhase};
+use mcp_rust_proxy::plugin::schema::PluginOutput;
 
 #[test]
 fn test_plugin_output_continue_false() {

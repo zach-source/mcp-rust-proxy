@@ -3,7 +3,7 @@
 //! This module manages plugin discovery, loading, and execution coordination.
 
 use crate::plugin::config::{PluginAssignment, PluginConfig};
-use crate::plugin::process::{PluginProcess, ProcessPool};
+use crate::plugin::process::ProcessPool;
 use crate::plugin::schema::{PluginError, PluginInput, PluginOutput, PluginPhase};
 use crate::state::Metrics;
 use dashmap::DashMap;
@@ -295,7 +295,7 @@ impl PluginManager {
 mod tests {
     use super::*;
     use crate::plugin::schema::PluginMetadata;
-    use std::io::Write;
+    
     use tempfile::TempDir;
 
     #[tokio::test]

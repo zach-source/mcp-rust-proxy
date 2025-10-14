@@ -1,5 +1,3 @@
-use mcp_rust_proxy::protocol::ProtocolVersion;
-use std::time::Duration;
 
 // Note: ServerConnectionState will be implemented in T015
 // These tests define the expected behavior

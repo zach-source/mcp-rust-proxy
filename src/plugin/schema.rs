@@ -4,7 +4,6 @@
 //! Plugins communicate with the proxy via stdin/stdout using JSON serialization.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use thiserror::Error;
 
 /// Execution phase for plugins

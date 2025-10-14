@@ -5,8 +5,7 @@
 //! - US2: Security middleware  
 //! - US3: Response transformation and chaining
 
-use mcp_rust_proxy::plugin::chain::PluginChain;
-use mcp_rust_proxy::plugin::config::{PluginAssignment, PluginConfig, ServerPluginConfig};
+use mcp_rust_proxy::plugin::config::PluginConfig;
 use mcp_rust_proxy::plugin::manager::PluginManager;
 use mcp_rust_proxy::plugin::schema::{PluginInput, PluginMetadata, PluginPhase};
 use std::collections::HashMap;

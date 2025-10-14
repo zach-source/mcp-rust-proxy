@@ -103,7 +103,7 @@ impl WeightCalculator {
             .unwrap_or(1) as f32;
 
         // Calculate composite scores for each context
-        let mut scores: Vec<(String, f32)> = contexts
+        let scores: Vec<(String, f32)> = contexts
             .iter()
             .map(|(ctx, retrieval_score)| {
                 let recency_score = self.calculate_recency_score(&ctx.timestamp, current_time);

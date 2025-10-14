@@ -5,7 +5,7 @@
 
 use mcp_rust_proxy::context::storage::{HybridStorage, StorageBackend};
 use mcp_rust_proxy::context::tracker::ContextTracker;
-use mcp_rust_proxy::context::types::{ContextType, ContextUnit, FeedbackSubmission};
+use mcp_rust_proxy::context::types::{ContextType, ContextUnit};
 use std::sync::Arc;
 use tempfile::TempDir;
 

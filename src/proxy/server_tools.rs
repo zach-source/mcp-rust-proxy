@@ -1,5 +1,4 @@
-use crate::error::Result;
-use crate::state::{AppState, ServerState};
+use crate::state::AppState;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
