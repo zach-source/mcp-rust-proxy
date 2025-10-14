@@ -174,7 +174,7 @@ impl EvolutionService {
     pub fn check_deprecation_threshold(
         &self,
         context: &ContextUnit,
-        _threshold: Option<f32>,
+        threshold: Option<f32>,
     ) -> bool {
         let threshold = threshold.unwrap_or(-0.5);
         context.feedback_count > 0 && context.aggregate_score < threshold

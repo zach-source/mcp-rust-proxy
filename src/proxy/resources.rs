@@ -229,7 +229,7 @@ async fn get_topology_resource(state: Arc<AppState>) -> Result<Value> {
 }
 
 /// Get logs for a specific server (URI template pattern)
-async fn get_logs_resource(uri: &str, state: Arc<AppState>) -> Result<Value> {
+async fn get_logs_resource(uri: &str, _state: Arc<AppState>) -> Result<Value> {
     // Parse: proxy://logs/{server_name}?lines=100
     let server_name = uri
         .strip_prefix("proxy://logs/")
@@ -248,7 +248,7 @@ async fn get_logs_resource(uri: &str, state: Arc<AppState>) -> Result<Value> {
 }
 
 /// Get metrics for a specific server (URI template pattern)
-async fn get_server_metrics_resource(uri: &str, state: Arc<AppState>) -> Result<Value> {
+async fn get_server_metrics_resource(uri: &str, _state: Arc<AppState>) -> Result<Value> {
     // Parse: proxy://metrics/{server_name}
     let server_name = uri.strip_prefix("proxy://metrics/").ok_or_else(|| {
         crate::error::ProxyError::InvalidRequest("Invalid metrics URI".to_string())
@@ -321,7 +321,7 @@ async fn get_server_config(server_name: &str, state: Arc<AppState>) -> Result<Va
     }))
 }
 
-async fn get_server_capabilities(server_name: &str, state: Arc<AppState>) -> Result<Value> {
+async fn get_server_capabilities(server_name: &str, _state: Arc<AppState>) -> Result<Value> {
     // TODO: Store capabilities from initialize response
     Ok(json!({
         "contents": [{

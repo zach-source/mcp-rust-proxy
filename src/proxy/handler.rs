@@ -67,7 +67,7 @@ impl RequestHandler {
         let result = match method {
             "initialize" => {
                 // Return MCP server capabilities
-                let config = self.state.config.read().await;
+                let _config = self.state.config.read().await;
                 serde_json::json!({
                     "protocolVersion": "2025-03-26",
                     "capabilities": {
@@ -342,7 +342,7 @@ impl RequestHandler {
                         .await
                     {
                         Ok(result) => result,
-                        Err(e) => {
+                        Err(_e) => {
                             return Ok(MCPResponse {
                                 jsonrpc: "2.0".to_string(),
                                 id,
