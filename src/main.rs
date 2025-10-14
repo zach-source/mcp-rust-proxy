@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(format!("mcp_rust_proxy={}", log_level).parse().unwrap()),
+                .add_directive(format!("mcp_rust_proxy={log_level}").parse().unwrap()),
         )
         .init();
 
@@ -429,7 +429,7 @@ async fn run_stdio_mode(config: mcp_rust_proxy::config::Config) -> Result<()> {
                             result: None,
                             error: Some(mcp_rust_proxy::proxy::MCPError {
                                 code: -32700,
-                                message: format!("Parse error: {}", e),
+                                message: format!("Parse error: {e}"),
                                 data: None,
                             }),
                         };

@@ -64,7 +64,7 @@ async fn test_scanner_detects_ignore_instructions() {
     );
 
     println!("✓ Prompt injection detection test passed");
-    println!("  Detections: {}", detections);
+    println!("  Detections: {detections}");
 }
 
 #[tokio::test]

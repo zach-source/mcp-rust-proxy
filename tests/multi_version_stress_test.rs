@@ -27,11 +27,10 @@ fn test_adapter_factory_handles_all_version_combinations() {
 
 #[tokio::test]
 async fn test_concurrent_adapter_usage() {
-    
     use tokio::task::JoinSet;
 
     // Create adapters for different version pairs
-    let adapters = vec![
+    let adapters = [
         create_adapter(ProtocolVersion::V20241105, ProtocolVersion::V20250618),
         create_adapter(ProtocolVersion::V20250618, ProtocolVersion::V20241105),
         create_adapter(ProtocolVersion::V20250326, ProtocolVersion::V20250618),

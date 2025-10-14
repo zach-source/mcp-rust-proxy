@@ -162,7 +162,7 @@ async fn test_three_plugin_chain_metadata_aggregation() {
     println!("✓ Three-plugin chain metadata aggregation test passed");
     println!("  Plugins executed: echo → path-normalizer → enrich-metadata");
     let keys: Vec<&String> = metadata_obj.keys().collect();
-    println!("  Metadata keys: {:?}", keys);
+    println!("  Metadata keys: {keys:?}");
 }
 
 #[tokio::test]
@@ -346,8 +346,8 @@ rl.on('close', () => process.exit(0));
     let output = result.unwrap();
 
     // Assert chain stopped (continue=false)
-    assert_eq!(
-        output.continue_, false,
+    assert!(
+        !output.continue_,
         "Chain should stop when plugin returns continue=false"
     );
 
@@ -465,5 +465,5 @@ async fn test_metadata_preserved_through_chain() {
 
     println!("✓ Metadata preservation test passed");
     let keys: Vec<&String> = metadata_obj.keys().collect();
-    println!("  Metadata keys: {:?}", keys);
+    println!("  Metadata keys: {keys:?}");
 }

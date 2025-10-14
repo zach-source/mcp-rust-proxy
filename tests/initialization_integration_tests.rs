@@ -479,8 +479,7 @@ async fn t026_server_delays_30_seconds() {
     // Verify it waited for the delay (at least 30 seconds)
     assert!(
         elapsed >= Duration::from_secs(30),
-        "Should wait at least 30 seconds, waited {:?}",
-        elapsed
+        "Should wait at least 30 seconds, waited {elapsed:?}"
     );
 
     // Verify response is valid
@@ -601,11 +600,10 @@ async fn t026_timeout_after_60_seconds() {
         mcp_rust_proxy::protocol::state::ConnectionState::Failed { error, .. } => {
             assert!(
                 error.contains("timeout"),
-                "Error should mention timeout: {}",
-                error
+                "Error should mention timeout: {error}"
             );
         }
-        other => panic!("Expected Failed state, got {:?}", other),
+        other => panic!("Expected Failed state, got {other:?}"),
     }
 
     // After failure, server should not be ready
@@ -615,7 +613,7 @@ async fn t026_timeout_after_60_seconds() {
 /// T026 Test Case 5: Multiple slow servers initialize concurrently
 #[tokio::test]
 async fn t026_multiple_slow_servers() {
-    let delays = vec![
+    let delays = [
         Duration::from_millis(500),
         Duration::from_millis(1000),
         Duration::from_millis(1500),
@@ -627,10 +625,10 @@ async fn t026_multiple_slow_servers() {
         let delay = *delay;
         let handle = tokio::spawn(async move {
             let mock = MockMcpServer::new(ProtocolVersion::V20250326).with_delay(delay);
-            let state = ServerConnectionState::new(format!("slow-server-{}", i));
+            let state = ServerConnectionState::new(format!("slow-server-{i}"));
 
             state
-                .start_initialization(format!("init-{}", i))
+                .start_initialization(format!("init-{i}"))
                 .await
                 .unwrap();
 
@@ -717,7 +715,7 @@ async fn t028_concurrent_clients_during_initialization() {
                 // Queue the request
                 let (tx, _rx) = tokio::sync::oneshot::channel();
                 let request = QueuedRequest {
-                    request_id: format!("req-{}", i),
+                    request_id: format!("req-{i}"),
                     method: "tools/list".to_string(),
                     params: None,
                     response_tx: Arc::new(Mutex::new(Some(tx))),
@@ -779,7 +777,7 @@ async fn t028_all_requests_processed_after_init() {
     for i in 0..5 {
         let (tx, _rx) = tokio::sync::oneshot::channel();
         let request = QueuedRequest {
-            request_id: format!("req-{}", i),
+            request_id: format!("req-{i}"),
             method: "tools/list".to_string(),
             params: None,
             response_tx: Arc::new(Mutex::new(Some(tx))),
@@ -802,7 +800,7 @@ async fn t028_all_requests_processed_after_init() {
 
     // Verify each request has correct data
     for (i, req) in processed.iter().enumerate() {
-        assert_eq!(req.request_id, format!("req-{}", i));
+        assert_eq!(req.request_id, format!("req-{i}"));
         assert_eq!(req.method, "tools/list");
     }
 }
@@ -825,7 +823,7 @@ async fn t028_no_race_conditions() {
         let handle = tokio::spawn(async move {
             let (tx, _rx) = tokio::sync::oneshot::channel();
             let request = QueuedRequest {
-                request_id: format!("req-{}", i),
+                request_id: format!("req-{i}"),
                 method: "tools/list".to_string(),
                 params: None,
                 response_tx: Arc::new(Mutex::new(Some(tx))),
@@ -877,7 +875,7 @@ async fn t028_no_deadlocks() {
         handles.push(tokio::spawn(async move {
             let (tx, _rx) = tokio::sync::oneshot::channel();
             let request = QueuedRequest {
-                request_id: format!("req-{}", i),
+                request_id: format!("req-{i}"),
                 method: "tools/list".to_string(),
                 params: None,
                 response_tx: Arc::new(Mutex::new(Some(tx))),

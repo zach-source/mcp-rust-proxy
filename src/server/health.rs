@@ -79,7 +79,7 @@ impl HealthChecker {
                         break;
                     }
                     Ok(Err(e)) => {
-                        last_error = Some(format!("Health check failed: {}", e));
+                        last_error = Some(format!("Health check failed: {e}"));
                         tracing::debug!(
                             "Health check attempt {} failed for server {}: {}",
                             attempt + 1,
@@ -148,7 +148,7 @@ impl HealthChecker {
         // Serialize and send ping request
         let request_json =
             serde_json::to_string(&ping_request).map_err(|_| HealthError::InvalidResponse)?;
-        let request_bytes = bytes::Bytes::from(format!("{}\n", request_json));
+        let request_bytes = bytes::Bytes::from(format!("{request_json}\n"));
 
         tracing::debug!(
             "Sending ping request to {}: {}",

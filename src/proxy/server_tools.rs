@@ -108,7 +108,7 @@ pub async fn handle_server_tool(
         "restart" => handle_restart_server(arguments, state).await,
         "start" => handle_start_server(arguments, state).await,
         "stop" => handle_stop_server(arguments, state).await,
-        _ => Err(format!("Unknown server tool: {}", tool_name)),
+        _ => Err(format!("Unknown server tool: {tool_name}")),
     }
 }
 
@@ -152,7 +152,7 @@ async fn handle_enable_server(
             "content": [{"type": "text", "text": format!("Server {} enabled", server_name)}]
         }))
     } else {
-        Err(format!("Server {} not found", server_name))
+        Err(format!("Server {server_name} not found"))
     }
 }
 
@@ -173,7 +173,7 @@ async fn handle_disable_server(
             "content": [{"type": "text", "text": format!("Server {} disabled", server_name)}]
         }))
     } else {
-        Err(format!("Server {} not found", server_name))
+        Err(format!("Server {server_name} not found"))
     }
 }
 

@@ -40,7 +40,7 @@ pub fn validate(config: &Config) -> Result<()> {
     for (name, server) in &config.servers {
         if server.command.is_empty() {
             return Err(
-                ConfigError::Validation(format!("Server '{}' has empty command", name)).into(),
+                ConfigError::Validation(format!("Server '{name}' has empty command")).into(),
             );
         }
 
@@ -49,8 +49,7 @@ pub fn validate(config: &Config) -> Result<()> {
             super::schema::TransportConfig::HttpSse { url, .. } => {
                 if !url.starts_with("http://") && !url.starts_with("https://") {
                     return Err(ConfigError::Validation(format!(
-                        "Server '{}' has invalid HTTP URL",
-                        name
+                        "Server '{name}' has invalid HTTP URL"
                     ))
                     .into());
                 }
@@ -58,8 +57,7 @@ pub fn validate(config: &Config) -> Result<()> {
             super::schema::TransportConfig::WebSocket { url, .. } => {
                 if !url.starts_with("ws://") && !url.starts_with("wss://") {
                     return Err(ConfigError::Validation(format!(
-                        "Server '{}' has invalid WebSocket URL",
-                        name
+                        "Server '{name}' has invalid WebSocket URL"
                     ))
                     .into());
                 }
@@ -87,7 +85,7 @@ fn apply_env_substitutions(mut config: Config) -> Result<Config> {
         }
 
         // Substitute in env vars
-        for (_, value) in &mut server.env {
+        for value in server.env.values_mut() {
             *value = substitute_env_vars(value)?;
         }
 
@@ -95,7 +93,7 @@ fn apply_env_substitutions(mut config: Config) -> Result<Config> {
         match &mut server.transport {
             super::schema::TransportConfig::HttpSse { url, headers, .. } => {
                 *url = substitute_env_vars(url)?;
-                for (_, header_value) in headers {
+                for header_value in headers.values_mut() {
                     *header_value = substitute_env_vars(header_value)?;
                 }
             }
@@ -133,8 +131,7 @@ fn substitute_env_vars(input: &str) -> Result<String> {
                     }
                 } else {
                     return Err(ConfigError::EnvVar(format!(
-                        "Environment variable '{}' not found",
-                        var_name
+                        "Environment variable '{var_name}' not found"
                     ))
                     .into());
                 }

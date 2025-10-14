@@ -204,7 +204,7 @@ async fn handle_ws_message(
     match msg.msg_type.as_str() {
         "subscribe_logs" => {
             if let Some(server_name) = msg.server {
-                let subscription_key = format!("logs_{}", server_name);
+                let subscription_key = format!("logs_{server_name}");
                 subscriptions.insert(subscription_key.clone(), true);
 
                 // Subscribe to log stream from server
@@ -253,7 +253,7 @@ async fn handle_ws_message(
         }
         "unsubscribe_logs" => {
             if let Some(server_name) = msg.server {
-                let subscription_key = format!("logs_{}", server_name);
+                let subscription_key = format!("logs_{server_name}");
                 subscriptions.remove(&subscription_key);
 
                 // Unsubscribe from server logs

@@ -18,6 +18,12 @@ pub struct StdioTransport {
     server_info: Option<Arc<ServerInfo>>,
 }
 
+impl Default for StdioTransport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StdioTransport {
     pub fn new() -> Self {
         Self {
@@ -71,7 +77,7 @@ impl Transport for StdioTransport {
         }
 
         let mut child = cmd.spawn().map_err(|e| {
-            TransportError::ConnectionFailed(format!("Failed to spawn process: {}", e))
+            TransportError::ConnectionFailed(format!("Failed to spawn process: {e}"))
         })?;
 
         let stdin = child

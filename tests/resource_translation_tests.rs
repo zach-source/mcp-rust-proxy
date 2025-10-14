@@ -102,8 +102,7 @@ fn t033_special_uri_characters() {
 
         assert!(
             !resource.uri.is_empty(),
-            "URI should not be empty for {}",
-            description
+            "URI should not be empty for {description}"
         );
     }
 }

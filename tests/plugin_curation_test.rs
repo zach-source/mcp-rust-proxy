@@ -68,7 +68,7 @@ async fn test_curation_flow_with_echo_plugin() {
 
     // Assert output is valid
     assert!(!output.text.is_empty(), "Plugin output text is empty");
-    assert_eq!(output.continue_, true, "Plugin should continue processing");
+    assert!(output.continue_, "Plugin should continue processing");
 
     // For echo plugin, content should be preserved
     assert_eq!(

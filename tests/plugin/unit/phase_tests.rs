@@ -154,7 +154,7 @@ fn test_phase_comparison() {
 fn test_phase_clone() {
     // Test that phases can be cloned
     let original = PluginPhase::Request;
-    let cloned = original.clone();
+    let cloned = original;
 
     assert_eq!(original, cloned, "Cloned phase should equal original");
 

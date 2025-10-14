@@ -22,6 +22,12 @@ pub struct RequestRouter {
     pub request_queues: DashMap<String, Arc<Mutex<Vec<QueuedRequest>>>>,
 }
 
+impl Default for RequestRouter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RequestRouter {
     pub fn new() -> Self {
         Self {

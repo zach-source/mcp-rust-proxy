@@ -66,8 +66,7 @@ impl WeightCalculator {
         let sum = retrieval_weight + recency_weight + type_weight + length_weight;
         assert!(
             (sum - 1.0).abs() < 0.01,
-            "Factor weights must sum to 1.0, got {}",
-            sum
+            "Factor weights must sum to 1.0, got {sum}"
         );
 
         Self {
@@ -318,20 +317,20 @@ impl ContextTracker {
         // Validate context unit
         context
             .validate()
-            .map_err(|e| format!("Invalid context unit: {}", e))?;
+            .map_err(|e| format!("Invalid context unit: {e}"))?;
 
         let score = retrieval_score.unwrap_or(0.5).clamp(0.0, 1.0);
 
         let mut sessions = self.active_sessions.write().await;
         let session = sessions
             .get_mut(&response_id)
-            .ok_or_else(|| format!("Response {} not found", response_id))?;
+            .ok_or_else(|| format!("Response {response_id} not found"))?;
 
         // Store context unit to storage
         self.storage
             .store_context_unit(&context)
             .await
-            .map_err(|e| format!("Failed to store context unit: {}", e))?;
+            .map_err(|e| format!("Failed to store context unit: {e}"))?;
 
         session.add_context(context, score);
 
@@ -360,7 +359,7 @@ impl ContextTracker {
             let mut sessions = self.active_sessions.write().await;
             sessions
                 .remove(&response_id)
-                .ok_or_else(|| format!("Response {} not found", response_id))?
+                .ok_or_else(|| format!("Response {response_id} not found"))?
         };
 
         // Calculate final weights
@@ -384,20 +383,20 @@ impl ContextTracker {
         // Validate response
         response
             .validate()
-            .map_err(|e| format!("Invalid response: {}", e))?;
+            .map_err(|e| format!("Invalid response: {e}"))?;
 
         // Store response
         self.storage
             .store_response(&response)
             .await
-            .map_err(|e| format!("Failed to store response: {}", e))?;
+            .map_err(|e| format!("Failed to store response: {e}"))?;
 
         // Build lineage manifest
         let manifest = self.build_lineage_manifest(&response, &session).await?;
 
         // Validate manifest size
         let manifest_json = serde_json::to_string(&manifest)
-            .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
+            .map_err(|e| format!("Failed to serialize manifest: {e}"))?;
 
         if manifest_json.len() > 5 * 1024 {
             return Err(format!(
@@ -410,7 +409,7 @@ impl ContextTracker {
         self.storage
             .store_lineage(&manifest)
             .await
-            .map_err(|e| format!("Failed to store lineage: {}", e))?;
+            .map_err(|e| format!("Failed to store lineage: {e}"))?;
 
         Ok(manifest)
     }
@@ -492,8 +491,8 @@ impl ContextTracker {
         use crate::context::types::FeedbackRecord;
 
         // Validate score range
-        if score < -1.0 || score > 1.0 {
-            return Err(format!("Score must be in range [-1.0, 1.0], got {}", score));
+        if !(-1.0..=1.0).contains(&score) {
+            return Err(format!("Score must be in range [-1.0, 1.0], got {score}"));
         }
 
         // Get the response to find its contributing contexts
@@ -501,8 +500,8 @@ impl ContextTracker {
             .storage
             .get_response(response_id)
             .await
-            .map_err(|e| format!("Failed to get response: {}", e))?
-            .ok_or_else(|| format!("Response {} not found", response_id))?;
+            .map_err(|e| format!("Failed to get response: {e}"))?
+            .ok_or_else(|| format!("Response {response_id} not found"))?;
 
         // Create feedback record
         let feedback = FeedbackRecord {
@@ -517,12 +516,12 @@ impl ContextTracker {
         // Validate and store feedback
         feedback
             .validate()
-            .map_err(|e| format!("Invalid feedback: {}", e))?;
+            .map_err(|e| format!("Invalid feedback: {e}"))?;
 
         self.storage
             .store_feedback(&feedback)
             .await
-            .map_err(|e| format!("Failed to store feedback: {}", e))?;
+            .map_err(|e| format!("Failed to store feedback: {e}"))?;
 
         // Propagate feedback to all contributing context units
         let status = self.propagate_feedback(&response, score).await?;
@@ -556,7 +555,7 @@ impl ContextTracker {
                 .storage
                 .get_context_unit(&ctx_ref.context_unit_id)
                 .await
-                .map_err(|e| format!("Failed to get context: {}", e))?
+                .map_err(|e| format!("Failed to get context: {e}"))?
                 .ok_or_else(|| format!("Context unit {} not found", ctx_ref.context_unit_id))?;
 
             // Calculate new aggregate score using weighted average
@@ -576,7 +575,7 @@ impl ContextTracker {
             self.storage
                 .update_context_unit(&ctx_ref.context_unit_id, new_score, new_count)
                 .await
-                .map_err(|e| format!("Failed to update context: {}", e))?;
+                .map_err(|e| format!("Failed to update context: {e}"))?;
 
             contexts_updated += 1;
             total_score_change += new_score - old_score;
@@ -630,7 +629,7 @@ mod tests {
 
         // Verify sum equals 1.0
         let sum: f32 = weights.iter().map(|w| w.weight).sum();
-        assert!((sum - 1.0).abs() < 0.001, "Weights sum to {}, not 1.0", sum);
+        assert!((sum - 1.0).abs() < 0.001, "Weights sum to {sum}, not 1.0");
 
         // Verify we have correct number of weights
         assert_eq!(weights.len(), 3);

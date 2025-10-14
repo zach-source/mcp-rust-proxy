@@ -8,6 +8,12 @@ use serde_json::Value;
 
 pub struct V20250326ToV20241105Adapter;
 
+impl Default for V20250326ToV20241105Adapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl V20250326ToV20241105Adapter {
     pub fn new() -> Self {
         Self
@@ -30,7 +36,7 @@ impl V20250326ToV20241105Adapter {
                             obj.insert("type".to_string(), Value::String("text".to_string()));
                             obj.insert(
                                 "text".to_string(),
-                                Value::String(format!("[Audio content: {}]", mime_type)),
+                                Value::String(format!("[Audio content: {mime_type}]")),
                             );
                         }
                     }

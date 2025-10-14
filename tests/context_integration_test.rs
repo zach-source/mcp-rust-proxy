@@ -327,12 +327,12 @@ async fn test_concurrent_tracking() {
                 .unwrap();
 
             let context = ContextUnit {
-                id: format!("ctx_concurrent_{}", i),
+                id: format!("ctx_concurrent_{i}"),
                 r#type: ContextType::User,
-                source: format!("source_{}", i),
+                source: format!("source_{i}"),
                 timestamp: chrono::Utc::now(),
                 embedding_id: None,
-                summary: Some(format!("Context {}", i)),
+                summary: Some(format!("Context {i}")),
                 version: 1,
                 previous_version_id: None,
                 aggregate_score: 0.0,

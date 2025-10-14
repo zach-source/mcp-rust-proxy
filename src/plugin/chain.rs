@@ -181,7 +181,7 @@ impl PluginChain {
                     text: original_content,
                     continue_: false,
                     metadata: None,
-                    error: Some(format!("Chain execution failed: {}", e)),
+                    error: Some(format!("Chain execution failed: {e}")),
                 }
             }
         }

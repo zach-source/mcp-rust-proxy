@@ -155,7 +155,7 @@ impl PluginInput {
     /// Serialize to JSON string
     pub fn to_json(&self) -> Result<String, PluginError> {
         serde_json::to_string(self).map_err(|e| PluginError::IoError {
-            reason: format!("Failed to serialize input: {}", e),
+            reason: format!("Failed to serialize input: {e}"),
         })
     }
 }
@@ -177,7 +177,7 @@ impl PluginOutput {
     pub fn from_json(json: &str) -> Result<Self, PluginError> {
         let output: PluginOutput =
             serde_json::from_str(json).map_err(|e| PluginError::InvalidOutput {
-                reason: format!("Failed to parse output JSON: {}", e),
+                reason: format!("Failed to parse output JSON: {e}"),
             })?;
 
         output.validate()?;

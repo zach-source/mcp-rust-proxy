@@ -71,12 +71,12 @@ impl PluginManager {
 
         let mut count = 0;
         let entries = std::fs::read_dir(plugin_dir).map_err(|e| PluginError::ConfigError {
-            reason: format!("Failed to read plugin directory: {}", e),
+            reason: format!("Failed to read plugin directory: {e}"),
         })?;
 
         for entry in entries {
             let entry = entry.map_err(|e| PluginError::ConfigError {
-                reason: format!("Failed to read directory entry: {}", e),
+                reason: format!("Failed to read directory entry: {e}"),
             })?;
 
             let path = entry.path();
@@ -295,7 +295,7 @@ impl PluginManager {
 mod tests {
     use super::*;
     use crate::plugin::schema::PluginMetadata;
-    
+
     use tempfile::TempDir;
 
     #[tokio::test]

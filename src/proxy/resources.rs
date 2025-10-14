@@ -56,8 +56,7 @@ pub async fn handle_proxy_resource(uri: &str, state: Arc<AppState>) -> Result<Va
                 get_server_resource(uri, state).await
             } else {
                 Err(crate::error::ProxyError::InvalidRequest(format!(
-                    "Unknown proxy resource: {}",
-                    uri
+                    "Unknown proxy resource: {uri}"
                 )))
             }
         }
@@ -211,7 +210,7 @@ async fn get_topology_resource(state: Arc<AppState>) -> Result<Value> {
             "name": name,
             "enabled": enabled,
             "state": format!("{:?}", *info.state.read().await),
-            "toolsCount": 0, // TODO: Cache tool counts per server
+            "toolsCount": 0, // TODO: Cache _tool counts per server
             "hasResources": false, // TODO: Track this during initialization
             "hasPrompts": false, // TODO: Track this during initialization
         }));
@@ -290,8 +289,7 @@ async fn get_server_resource(uri: &str, state: Arc<AppState>) -> Result<Value> {
         "config" => get_server_config(server_name, state).await,
         "capabilities" => get_server_capabilities(server_name, state).await,
         _ => Err(crate::error::ProxyError::InvalidRequest(format!(
-            "Unknown server resource type: {}. Use 'config' or 'capabilities'",
-            resource_type
+            "Unknown server resource type: {resource_type}. Use 'config' or 'capabilities'"
         ))),
     }
 }

@@ -40,7 +40,7 @@ impl EvolutionService {
         // Validate previous context
         previous_context
             .validate()
-            .map_err(|e| format!("Invalid previous context: {}", e))?;
+            .map_err(|e| format!("Invalid previous context: {e}"))?;
 
         // Create new version
         let new_version = ContextUnit {
@@ -59,7 +59,7 @@ impl EvolutionService {
         // Validate new version
         new_version
             .validate()
-            .map_err(|e| format!("Invalid new version: {}", e))?;
+            .map_err(|e| format!("Invalid new version: {e}"))?;
 
         // Ensure version is monotonically increasing
         if new_version.version <= previous_context.version {
@@ -73,7 +73,7 @@ impl EvolutionService {
         self.storage
             .store_context_unit(&new_version)
             .await
-            .map_err(|e| format!("Failed to store new version: {}", e))?;
+            .map_err(|e| format!("Failed to store new version: {e}"))?;
 
         Ok(new_version)
     }
@@ -97,15 +97,15 @@ impl EvolutionService {
             .storage
             .get_context_unit(context_unit_id)
             .await
-            .map_err(|e| format!("Failed to get context: {}", e))?
-            .ok_or_else(|| format!("Context unit {} not found", context_unit_id))?;
+            .map_err(|e| format!("Failed to get context: {e}"))?
+            .ok_or_else(|| format!("Context unit {context_unit_id} not found"))?;
 
         // Traverse version chain using storage method
         let chain = self
             .storage
             .get_context_version_chain(context_unit_id)
             .await
-            .map_err(|e| format!("Failed to get version chain: {}", e))?;
+            .map_err(|e| format!("Failed to get version chain: {e}"))?;
 
         // Convert to ContextVersion objects
         let history: Vec<ContextVersion> = chain
@@ -150,15 +150,15 @@ impl EvolutionService {
             .storage
             .get_context_unit(version_a_id)
             .await
-            .map_err(|e| format!("Failed to get version A: {}", e))?
-            .ok_or_else(|| format!("Version {} not found", version_a_id))?;
+            .map_err(|e| format!("Failed to get version A: {e}"))?
+            .ok_or_else(|| format!("Version {version_a_id} not found"))?;
 
         let version_b = self
             .storage
             .get_context_unit(version_b_id)
             .await
-            .map_err(|e| format!("Failed to get version B: {}", e))?
-            .ok_or_else(|| format!("Version {} not found", version_b_id))?;
+            .map_err(|e| format!("Failed to get version B: {e}"))?
+            .ok_or_else(|| format!("Version {version_b_id} not found"))?;
 
         Ok((version_a, version_b))
     }
@@ -174,7 +174,7 @@ impl EvolutionService {
     pub fn check_deprecation_threshold(
         &self,
         context: &ContextUnit,
-        threshold: Option<f32>,
+        _threshold: Option<f32>,
     ) -> bool {
         let threshold = threshold.unwrap_or(-0.5);
         context.feedback_count > 0 && context.aggregate_score < threshold
@@ -190,7 +190,7 @@ impl EvolutionService {
     /// * `Err(String)` if query fails
     pub async fn get_deprecated_contexts(
         &self,
-        threshold: Option<f32>,
+        _threshold: Option<f32>,
     ) -> Result<Vec<ContextUnit>, String> {
         // Note: This would require a new storage method to query by score
         // For now, return empty vec as placeholder
@@ -211,7 +211,7 @@ mod tests {
             source: "test".to_string(),
             timestamp: Utc::now(),
             embedding_id: None,
-            summary: Some(format!("Version {}", version)),
+            summary: Some(format!("Version {version}")),
             version,
             previous_version_id: prev_id,
             aggregate_score: 0.0,

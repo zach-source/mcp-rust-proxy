@@ -1,4 +1,3 @@
-
 // Note: ServerConnectionState will be implemented in T015
 // These tests define the expected behavior
 

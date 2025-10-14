@@ -26,8 +26,7 @@ pub async fn start_server(state: Arc<AppState>) -> Result<()> {
     // Parse address
     let addr: std::net::SocketAddr = addr.parse().map_err(|e| {
         crate::error::ProxyError::Config(crate::error::ConfigError::Parse(format!(
-            "Invalid web UI address: {}",
-            e
+            "Invalid web UI address: {e}"
         )))
     })?;
 
@@ -99,7 +98,7 @@ fn api_key_auth(api_key: String) -> impl Filter<Extract = (), Error = warp::Reje
             let api_key = api_key.clone();
             async move {
                 if let Some(header) = auth_header {
-                    if header == format!("Bearer {}", api_key) {
+                    if header == format!("Bearer {api_key}") {
                         Ok(())
                     } else {
                         Err(warp::reject::custom(AuthError::invalid_api_key()))
