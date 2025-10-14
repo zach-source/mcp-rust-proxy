@@ -117,7 +117,7 @@
               cargoExtraArgs = "--target ${target}";
 
               # Set environment variables for the build
-              BUILD_YEW_UI = "1";
+              BUILD_YEW_UI = "0"; # Disable Yew UI build - causes WASM linker issues in Nix
               CARGO_REGISTRIES_CRATES_IO_PROTOCOL = "sparse";
               # RUSTFLAGS = "--cfg rustc_1_82";
 
@@ -139,18 +139,6 @@
               depsBuildBuild = pkgs.lib.optionals (target == "aarch64-unknown-linux-gnu") [
                 pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc
               ];
-
-              # Pre-build hook to build Yew UI
-              preBuild = ''
-                # Build Yew UI
-                pushd yew-ui
-                trunk build --release
-                popd
-
-                # Copy built UI to expected location
-                mkdir -p yew-dist
-                cp -r yew-ui/dist/* yew-dist/
-              '';
             }
             // extraArgs
           );
