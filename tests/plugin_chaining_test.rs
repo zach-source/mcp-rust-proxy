@@ -114,6 +114,7 @@ async fn test_three_plugin_chain_metadata_aggregation() {
             phase: PluginPhase::Response,
             user_query: Some("Get file".to_string()),
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -332,6 +333,7 @@ rl.on('close', () => process.exit(0));
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -433,6 +435,7 @@ async fn test_metadata_preserved_through_chain() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 

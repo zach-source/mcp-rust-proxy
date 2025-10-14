@@ -71,6 +71,7 @@ async fn test_complete_plugin_system_integration() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -109,6 +110,7 @@ async fn test_plugin_system_handles_all_error_types() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
