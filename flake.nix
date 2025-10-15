@@ -54,6 +54,7 @@
           with pkgs;
           [
             openssl
+            openssl.dev
             pkg-config
             perl # Required for OpenSSL build
           ]
@@ -120,6 +121,11 @@
               BUILD_YEW_UI = "0"; # Disable Yew UI build - causes WASM linker issues in Nix
               CARGO_REGISTRIES_CRATES_IO_PROTOCOL = "sparse";
               # RUSTFLAGS = "--cfg rustc_1_82";
+
+              # Help openssl-sys find OpenSSL in Nix store
+              OPENSSL_DIR = "${pkgs.openssl.dev}";
+              OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
+              PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
 
               # No explicit linker configuration - let cargo/rustc use defaults
               # Setting linker to empty string causes "couldn't extract file stem" errors
