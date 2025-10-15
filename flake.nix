@@ -128,6 +128,13 @@
               depsBuildBuild = pkgs.lib.optionals (target == "aarch64-unknown-linux-gnu") [
                 pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc
               ];
+
+              # Add cross-compiled OpenSSL for aarch64
+              buildInputs =
+                commonBuildInputs
+                ++ pkgs.lib.optionals (target == "aarch64-unknown-linux-gnu") [
+                  pkgs.pkgsCross.aarch64-multiplatform.openssl
+                ];
             }
             // extraArgs
           );
