@@ -16,33 +16,37 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v14
-      
+
       - name: Setup Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@v8
-      
+
       - name: Setup Cachix
         uses: cachix/cachix-action@v15
         with:
           name: mcp-rust-proxy
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      
+
+      - name: Install devenv
+        run: |
+          nix-env -iA devenv -f https://github.com/NixOS/nixpkgs/tarball/nixpkgs-unstable
+
       - name: Run tests
         run: |
-          nix develop --command cargo test --all-features
-      
+          devenv shell -- cargo test --all-features
+
       - name: Run clippy
         run: |
-          nix develop --command cargo clippy --all-features -- -D warnings
-      
+          devenv shell -- cargo clippy --all-features -- -D warnings
+
       - name: Check formatting
         run: |
-          nix develop --command cargo fmt -- --check
+          devenv shell -- cargo fmt -- --check
 
   build:
     name: Build
