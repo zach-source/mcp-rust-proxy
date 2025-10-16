@@ -212,13 +212,12 @@ mod pass_through_adapter_tests {
         let elapsed = start.elapsed();
         let avg_micros = elapsed.as_micros() / iterations;
 
-        println!("PassThroughAdapter average overhead: {}μs", avg_micros);
+        println!("PassThroughAdapter average overhead: {avg_micros}μs");
 
         // Should be < 50μs per operation
         assert!(
             avg_micros < 50,
-            "PassThroughAdapter overhead too high: {}μs (expected < 50μs)",
-            avg_micros
+            "PassThroughAdapter overhead too high: {avg_micros}μs (expected < 50μs)"
         );
     }
 }

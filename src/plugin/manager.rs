@@ -3,7 +3,7 @@
 //! This module manages plugin discovery, loading, and execution coordination.
 
 use crate::plugin::config::{PluginAssignment, PluginConfig};
-use crate::plugin::process::{PluginProcess, ProcessPool};
+use crate::plugin::process::ProcessPool;
 use crate::plugin::schema::{PluginError, PluginInput, PluginOutput, PluginPhase};
 use crate::state::Metrics;
 use dashmap::DashMap;
@@ -71,12 +71,12 @@ impl PluginManager {
 
         let mut count = 0;
         let entries = std::fs::read_dir(plugin_dir).map_err(|e| PluginError::ConfigError {
-            reason: format!("Failed to read plugin directory: {}", e),
+            reason: format!("Failed to read plugin directory: {e}"),
         })?;
 
         for entry in entries {
             let entry = entry.map_err(|e| PluginError::ConfigError {
-                reason: format!("Failed to read directory entry: {}", e),
+                reason: format!("Failed to read directory entry: {e}"),
             })?;
 
             let path = entry.path();
@@ -295,7 +295,7 @@ impl PluginManager {
 mod tests {
     use super::*;
     use crate::plugin::schema::PluginMetadata;
-    use std::io::Write;
+
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -373,6 +373,7 @@ rl.on('line', async (line) => {
                 phase: PluginPhase::Response,
                 user_query: None,
                 tool_arguments: None,
+                mcp_servers: None,
             },
         };
 
@@ -419,6 +420,7 @@ rl.on('line', () => {
                 phase: PluginPhase::Response,
                 user_query: None,
                 tool_arguments: None,
+                mcp_servers: None,
             },
         };
 

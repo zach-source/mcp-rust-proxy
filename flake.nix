@@ -54,6 +54,7 @@
           with pkgs;
           [
             openssl
+            openssl.dev
             pkg-config
             perl # Required for OpenSSL build
           ]
@@ -117,40 +118,29 @@
               cargoExtraArgs = "--target ${target}";
 
               # Set environment variables for the build
-              BUILD_YEW_UI = "1";
+              BUILD_YEW_UI = "0"; # Disable Yew UI build - causes WASM linker issues in Nix
               CARGO_REGISTRIES_CRATES_IO_PROTOCOL = "sparse";
               # RUSTFLAGS = "--cfg rustc_1_82";
 
-              # Override any user-specific linker configuration
-              CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (
-                pkgs.stdenv.isDarwin && target == "x86_64-apple-darwin"
-              ) "cc";
-              CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = pkgs.lib.optionalString (
-                pkgs.stdenv.isDarwin && target == "aarch64-apple-darwin"
-              ) "cc";
-              CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = pkgs.lib.optionalString (
-                target == "x86_64-unknown-linux-gnu"
-              ) "cc";
-              CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = pkgs.lib.optionalString (
-                target == "aarch64-unknown-linux-gnu"
-              ) "${pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc}/bin/aarch64-unknown-linux-gnu-gcc";
+              # Help openssl-sys find OpenSSL in Nix store
+              OPENSSL_DIR = "${pkgs.openssl.dev}";
+              OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
+              PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+
+              # No explicit linker configuration - let cargo/rustc use defaults
+              # Setting linker to empty string causes "couldn't extract file stem" errors
 
               # Add cross-compilation dependencies
               depsBuildBuild = pkgs.lib.optionals (target == "aarch64-unknown-linux-gnu") [
                 pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc
               ];
 
-              # Pre-build hook to build Yew UI
-              preBuild = ''
-                # Build Yew UI
-                pushd yew-ui
-                trunk build --release
-                popd
-
-                # Copy built UI to expected location
-                mkdir -p yew-dist
-                cp -r yew-ui/dist/* yew-dist/
-              '';
+              # Add cross-compiled OpenSSL for aarch64
+              buildInputs =
+                commonBuildInputs
+                ++ pkgs.lib.optionals (target == "aarch64-unknown-linux-gnu") [
+                  pkgs.pkgsCross.aarch64-multiplatform.openssl
+                ];
             }
             // extraArgs
           );

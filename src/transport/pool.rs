@@ -63,7 +63,7 @@ impl ConnectionPool {
         }));
 
         let request_json = serde_json::to_string(&initialize_request)?;
-        let request_bytes = bytes::Bytes::from(format!("{}\n", request_json));
+        let request_bytes = bytes::Bytes::from(format!("{request_json}\n"));
 
         tracing::debug!("Sending initialize request to {}", server_name);
         conn.send(request_bytes).await?;
@@ -131,8 +131,7 @@ impl ConnectionPool {
             }
             _ => {
                 return Err(crate::error::TransportError::ConnectionFailed(format!(
-                    "Invalid initialize response from {}",
-                    server_name
+                    "Invalid initialize response from {server_name}"
                 ))
                 .into());
             }
@@ -147,7 +146,7 @@ impl ConnectionPool {
         ));
 
         let notification_json = serde_json::to_string(&initialized_notification)?;
-        let notification_bytes = bytes::Bytes::from(format!("{}\n", notification_json));
+        let notification_bytes = bytes::Bytes::from(format!("{notification_json}\n"));
 
         tracing::debug!("Sending initialized notification to {}", server_name);
         conn.send(notification_bytes).await?;

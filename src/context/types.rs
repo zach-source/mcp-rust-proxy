@@ -289,8 +289,7 @@ impl Response {
         let total_weight: f32 = self.context_units.iter().map(|c| c.weight).sum();
         if (total_weight - 1.0).abs() > 0.01 {
             return Err(format!(
-                "Context weights must sum to 1.0 (got {})",
-                total_weight
+                "Context weights must sum to 1.0 (got {total_weight})"
             ));
         }
 

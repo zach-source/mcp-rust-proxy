@@ -1,9 +1,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::*;
-    use crate::protocol::{
-        JsonRpcId, JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, JsonRpcV2Message,
-    };
+    use crate::protocol::{JsonRpcId, JsonRpcMessage, JsonRpcV2Message};
     use serde_json::json;
 
     #[test]

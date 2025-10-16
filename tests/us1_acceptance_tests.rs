@@ -344,7 +344,7 @@ async fn us1_scenario_4_multiple_versions_no_conflicts() {
     );
 
     // Verify: All three versions are distinct (no conflicts)
-    let mut versions = vec![v1, v2, v3];
+    let mut versions = [v1, v2, v3];
     versions.sort_by_key(|v| v.as_str());
     assert_eq!(v1, ProtocolVersion::V20241105);
     assert_eq!(v2, ProtocolVersion::V20250326);

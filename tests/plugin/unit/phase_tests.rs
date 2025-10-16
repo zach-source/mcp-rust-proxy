@@ -38,6 +38,7 @@ fn test_plugin_input_phase_detection() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -53,6 +54,7 @@ fn test_plugin_input_phase_detection() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -90,6 +92,7 @@ fn test_plugin_input_serialization_with_phases() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -104,6 +107,7 @@ fn test_plugin_input_serialization_with_phases() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -150,7 +154,7 @@ fn test_phase_comparison() {
 fn test_phase_clone() {
     // Test that phases can be cloned
     let original = PluginPhase::Request;
-    let cloned = original.clone();
+    let cloned = original;
 
     assert_eq!(original, cloned, "Cloned phase should equal original");
 
@@ -167,6 +171,7 @@ fn test_metadata_with_different_phases() {
         phase: PluginPhase::Request,
         user_query: Some("test query".to_string()),
         tool_arguments: None,
+        mcp_servers: None,
     };
 
     let response_metadata = PluginMetadata {
@@ -176,6 +181,7 @@ fn test_metadata_with_different_phases() {
         phase: PluginPhase::Response,
         user_query: None,
         tool_arguments: None,
+        mcp_servers: None,
     };
 
     // Verify metadata can be serialized

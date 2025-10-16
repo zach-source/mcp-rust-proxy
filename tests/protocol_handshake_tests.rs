@@ -116,7 +116,7 @@ async fn test_all_supported_versions_parseable() {
 
     for (version_str, expected) in versions {
         let (parsed, is_supported) = ProtocolVersion::from_string(version_str);
-        assert!(is_supported, "Version {} should be supported", version_str);
+        assert!(is_supported, "Version {version_str} should be supported");
         assert_eq!(parsed, expected);
     }
 }

@@ -1,6 +1,5 @@
 use crate::error::Result;
 use crate::state::AppState;
-use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::interval;

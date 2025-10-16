@@ -4,7 +4,6 @@
 //! can call to query lineage data, submit feedback, and track context evolution.
 
 use crate::context::query::{format_manifest, OutputFormat, QueryFilters, QueryService};
-use crate::context::types::FeedbackSubmission;
 use crate::state::AppState;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -92,7 +91,7 @@ pub async fn handle_tracing_resource(uri: &str, state: Arc<AppState>) -> Result<
             let feedback = storage
                 .get_feedback_range(week_ago, now)
                 .await
-                .map_err(|e| format!("Failed to get feedback: {}", e))?;
+                .map_err(|e| format!("Failed to get feedback: {e}"))?;
 
             let recent: Vec<_> = feedback.into_iter().take(20).collect();
 
@@ -128,8 +127,8 @@ pub async fn handle_tracing_resource(uri: &str, state: Arc<AppState>) -> Result<
                 let manifest = storage
                     .query_lineage(response_id)
                     .await
-                    .map_err(|e| format!("Failed to query lineage: {}", e))?
-                    .ok_or_else(|| format!("Response {} not found", response_id))?;
+                    .map_err(|e| format!("Failed to query lineage: {e}"))?
+                    .ok_or_else(|| format!("Response {response_id} not found"))?;
 
                 Ok(json!({
                     "contents": [{
@@ -143,8 +142,8 @@ pub async fn handle_tracing_resource(uri: &str, state: Arc<AppState>) -> Result<
                 let context = storage
                     .get_context_unit(context_id)
                     .await
-                    .map_err(|e| format!("Failed to get context: {}", e))?
-                    .ok_or_else(|| format!("Context {} not found", context_id))?;
+                    .map_err(|e| format!("Failed to get context: {e}"))?
+                    .ok_or_else(|| format!("Context {context_id} not found"))?;
 
                 Ok(json!({
                     "contents": [{
@@ -159,7 +158,7 @@ pub async fn handle_tracing_resource(uri: &str, state: Arc<AppState>) -> Result<
                 let history = evolution_service
                     .get_version_history(context_id)
                     .await
-                    .map_err(|e| format!("Failed to get evolution: {}", e))?;
+                    .map_err(|e| format!("Failed to get evolution: {e}"))?;
 
                 Ok(json!({
                     "contents": [{
@@ -169,7 +168,7 @@ pub async fn handle_tracing_resource(uri: &str, state: Arc<AppState>) -> Result<
                     }]
                 }))
             } else {
-                Err(format!("Unknown resource URI: {}", uri))
+                Err(format!("Unknown resource URI: {uri}"))
             }
         }
     }
@@ -447,7 +446,7 @@ pub async fn handle_tracing_tool(
             let session_id = arguments
                 .get("session_id")
                 .and_then(|v| v.as_str())
-                .or_else(|| session_from_file.as_deref())
+                .or(session_from_file.as_deref())
                 .unwrap_or("unknown");
 
             let auto_feedback = arguments
@@ -553,16 +552,16 @@ pub async fn handle_tracing_tool(
                 .get("format")
                 .and_then(|v| v.as_str())
                 .unwrap_or("json");
-            let format = OutputFormat::from_str(format_str).unwrap_or(OutputFormat::Json);
+            let format = OutputFormat::parse(format_str).unwrap_or(OutputFormat::Json);
 
             let manifest = storage
                 .query_lineage(response_id)
                 .await
-                .map_err(|e| format!("Failed to query lineage: {}", e))?
-                .ok_or_else(|| format!("Response {} not found", response_id))?;
+                .map_err(|e| format!("Failed to query lineage: {e}"))?
+                .ok_or_else(|| format!("Response {response_id} not found"))?;
 
             let formatted = format_manifest(&manifest, format)
-                .map_err(|e| format!("Failed to format manifest: {}", e))?;
+                .map_err(|e| format!("Failed to format manifest: {e}"))?;
 
             Ok(json!({
                 "content": [{
@@ -596,7 +595,7 @@ pub async fn handle_tracing_tool(
             let report = query_service
                 .query_responses_by_context(context_unit_id, Some(filters))
                 .await
-                .map_err(|e| format!("Failed to query impact: {}", e))?;
+                .map_err(|e| format!("Failed to query impact: {e}"))?;
 
             Ok(json!({
                 "content": [{
@@ -628,7 +627,7 @@ pub async fn handle_tracing_tool(
             let contexts = query_service
                 .query_contexts_by_response(response_id, type_filter)
                 .await
-                .map_err(|e| format!("Failed to query contexts: {}", e))?;
+                .map_err(|e| format!("Failed to query contexts: {e}"))?;
 
             Ok(json!({
                 "content": [{
@@ -648,7 +647,7 @@ pub async fn handle_tracing_tool(
             let history = evolution_service
                 .get_version_history(context_unit_id)
                 .await
-                .map_err(|e| format!("Failed to get evolution history: {}", e))?;
+                .map_err(|e| format!("Failed to get evolution history: {e}"))?;
 
             Ok(json!({
                 "content": [{
@@ -682,7 +681,7 @@ pub async fn handle_tracing_tool(
             let propagation_status = tracker
                 .record_feedback(response_id, score, feedback_text, user_id)
                 .await
-                .map_err(|e| format!("Failed to record feedback: {}", e))?;
+                .map_err(|e| format!("Failed to record feedback: {e}"))?;
 
             Ok(json!({
                 "content": [{
@@ -697,6 +696,6 @@ pub async fn handle_tracing_tool(
             }))
         }
 
-        _ => Err(format!("Unknown tracing tool: {}", tool_name)),
+        _ => Err(format!("Unknown tracing tool: {tool_name}")),
     }
 }

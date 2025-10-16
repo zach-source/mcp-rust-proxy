@@ -19,7 +19,7 @@ pub enum OutputFormat {
 
 impl OutputFormat {
     /// Parse output format from string
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "json" => Some(Self::Json),
             "tree" => Some(Self::Tree),
@@ -40,7 +40,7 @@ impl OutputFormat {
 /// * `Ok(String)` with JSON representation
 /// * `Err(String)` if serialization fails
 pub fn format_as_json(manifest: &LineageManifest) -> Result<String, String> {
-    serde_json::to_string_pretty(manifest).map_err(|e| format!("JSON serialization failed: {}", e))
+    serde_json::to_string_pretty(manifest).map_err(|e| format!("JSON serialization failed: {e}"))
 }
 
 /// Format lineage manifest as ASCII tree visualization
@@ -90,7 +90,7 @@ pub fn format_as_tree(manifest: &LineageManifest) -> Result<String, String> {
             .as_ref()
             .map(|s| {
                 if s.len() > 50 {
-                    format!("{:.50}...", s)
+                    format!("{s:.50}...")
                 } else {
                     s.clone()
                 }
@@ -166,8 +166,7 @@ pub fn format_as_compact(manifest: &LineageManifest) -> Result<String, String> {
         .count();
 
     output.push_str(&format!(
-        "Contexts: {} total (System: {}, User: {}, External: {}, ModelState: {})\n",
-        total, system_count, user_count, external_count, model_state_count
+        "Contexts: {total} total (System: {system_count}, User: {user_count}, External: {external_count}, ModelState: {model_state_count})\n"
     ));
 
     // Top 3 contributors
@@ -181,7 +180,7 @@ pub fn format_as_compact(manifest: &LineageManifest) -> Result<String, String> {
             .as_ref()
             .map(|s| {
                 if s.len() > 60 {
-                    format!("{:.60}...", s)
+                    format!("{s:.60}...")
                 } else {
                     s.clone()
                 }
@@ -219,7 +218,7 @@ pub fn format_manifest(manifest: &LineageManifest, format: OutputFormat) -> Resu
 // ========== Query Service ==========
 
 use crate::context::storage::StorageBackend;
-use crate::context::types::{ContextImpactReport, ContextType, ResponseSummary};
+use crate::context::types::{ContextImpactReport, ContextType};
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
 
@@ -288,7 +287,7 @@ impl QueryService {
                 filters.limit,
             )
             .await
-            .map_err(|e| format!("Failed to query responses: {}", e))?;
+            .map_err(|e| format!("Failed to query responses: {e}"))?;
 
         // Calculate statistics
         let total_responses = responses.len();
@@ -325,8 +324,8 @@ impl QueryService {
             .storage
             .query_lineage(response_id)
             .await
-            .map_err(|e| format!("Failed to query lineage: {}", e))?
-            .ok_or_else(|| format!("Response {} not found", response_id))?;
+            .map_err(|e| format!("Failed to query lineage: {e}"))?
+            .ok_or_else(|| format!("Response {response_id} not found"))?;
 
         // Filter by type if specified
         let contexts = if let Some(filter_type) = type_filter {
@@ -427,13 +426,10 @@ mod tests {
     }
 
     #[test]
-    fn test_output_format_from_str() {
-        assert_eq!(OutputFormat::from_str("json"), Some(OutputFormat::Json));
-        assert_eq!(OutputFormat::from_str("tree"), Some(OutputFormat::Tree));
-        assert_eq!(
-            OutputFormat::from_str("compact"),
-            Some(OutputFormat::Compact)
-        );
-        assert_eq!(OutputFormat::from_str("invalid"), None);
+    fn test_output_format_parse() {
+        assert_eq!(OutputFormat::parse("json"), Some(OutputFormat::Json));
+        assert_eq!(OutputFormat::parse("tree"), Some(OutputFormat::Tree));
+        assert_eq!(OutputFormat::parse("compact"), Some(OutputFormat::Compact));
+        assert_eq!(OutputFormat::parse("invalid"), None);
     }
 }

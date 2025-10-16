@@ -1,7 +1,10 @@
 use dashmap::DashMap;
 use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::Mutex;
+
+/// Type alias for complex response channel type
+type ResponseChannel = Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<Value, String>>>>>;
 
 /// Queued request waiting for server initialization
 #[derive(Debug, Clone)]
@@ -9,7 +12,7 @@ pub struct QueuedRequest {
     pub request_id: String,
     pub method: String,
     pub params: Option<Value>,
-    pub response_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<Value, String>>>>>,
+    pub response_tx: ResponseChannel,
 }
 
 pub struct RequestRouter {
@@ -20,6 +23,12 @@ pub struct RequestRouter {
 
     // Request queues per server (for requests during initialization)
     pub request_queues: DashMap<String, Arc<Mutex<Vec<QueuedRequest>>>>,
+}
+
+impl Default for RequestRouter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RequestRouter {

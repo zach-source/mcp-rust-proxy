@@ -12,8 +12,8 @@ pub fn generate_resource_name(uri: &str) -> String {
     // Try parsing as URL
     if let Ok(parsed) = url::Url::parse(uri) {
         // Get last path segment
-        if let Some(segments) = parsed.path_segments() {
-            if let Some(last) = segments.last() {
+        if let Some(mut segments) = parsed.path_segments() {
+            if let Some(last) = segments.next_back() {
                 if !last.is_empty() {
                     return last.to_string();
                 }

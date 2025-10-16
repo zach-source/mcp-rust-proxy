@@ -7,6 +7,12 @@ use serde_json::Value;
 
 pub struct V20241105ToV20250618Adapter;
 
+impl Default for V20241105ToV20250618Adapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl V20241105ToV20250618Adapter {
     pub fn new() -> Self {
         Self
@@ -16,7 +22,7 @@ impl V20241105ToV20250618Adapter {
     fn translate_tools_list_response(&self, mut response: Value) -> Result<Value, ProtocolError> {
         if let Some(result) = response.get_mut("result") {
             if let Some(tools) = result.get_mut("tools").and_then(|t| t.as_array_mut()) {
-                for tool in tools {
+                for _tool in tools {
                     // v1 tools stay as-is, but we can add empty optional fields
                     // title and outputSchema are optional in v2, so omitting them is fine
                 }

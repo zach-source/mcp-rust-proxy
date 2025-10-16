@@ -610,7 +610,7 @@ async fn get_trace(
         .get("format")
         .map(|s| s.as_str())
         .unwrap_or("json");
-    let format = OutputFormat::from_str(format_str).unwrap_or(OutputFormat::Json);
+    let format = OutputFormat::parse(format_str).unwrap_or(OutputFormat::Json);
 
     // Query storage for lineage manifest
     match &*state.context_tracker.read().await {

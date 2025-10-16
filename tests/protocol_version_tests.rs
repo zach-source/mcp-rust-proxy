@@ -45,12 +45,11 @@ fn test_round_trip_conversion() {
 
     for version_str in versions {
         let (version, supported) = ProtocolVersion::from_string(version_str);
-        assert!(supported, "Version {} should be supported", version_str);
+        assert!(supported, "Version {version_str} should be supported");
         assert_eq!(
             version.as_str(),
             version_str,
-            "Round-trip failed for {}",
-            version_str
+            "Round-trip failed for {version_str}"
         );
     }
 }

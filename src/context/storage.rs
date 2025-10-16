@@ -682,8 +682,7 @@ impl HybridStorage {
 impl StorageBackend for HybridStorage {
     async fn store_context_unit(&self, unit: &ContextUnit) -> Result<(), StorageError> {
         // Validate before storing
-        unit.validate()
-            .map_err(|e| StorageError::ValidationError(e))?;
+        unit.validate().map_err(StorageError::ValidationError)?;
 
         // Update cache
         self.context_cache.insert(
@@ -806,9 +805,7 @@ impl StorageBackend for HybridStorage {
 
     async fn store_response(&self, response: &Response) -> Result<(), StorageError> {
         // Validate before storing
-        response
-            .validate()
-            .map_err(|e| StorageError::ValidationError(e))?;
+        response.validate().map_err(StorageError::ValidationError)?;
 
         // Update cache
         self.response_cache.insert(
@@ -1003,9 +1000,7 @@ impl StorageBackend for HybridStorage {
 
     async fn store_feedback(&self, feedback: &FeedbackRecord) -> Result<(), StorageError> {
         // Validate before storing
-        feedback
-            .validate()
-            .map_err(|e| StorageError::ValidationError(e))?;
+        feedback.validate().map_err(StorageError::ValidationError)?;
 
         // Persist to SQLite (feedback not cached)
         let db = self.db.lock().await;

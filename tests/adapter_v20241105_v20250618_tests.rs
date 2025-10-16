@@ -1,7 +1,3 @@
-/// T039: V20241105 ↔ V20250618 adapter tests
-///
-/// Tests for bidirectional translation between 2024-11-05 and 2025-06-18
-use mcp_rust_proxy::protocol::{ProtocolAdapter, ProtocolVersion};
 use serde_json::json;
 
 // These tests will use the adapters implemented in T040 and T041

@@ -5,7 +5,7 @@
 
 use mcp_rust_proxy::context::storage::{HybridStorage, StorageBackend};
 use mcp_rust_proxy::context::tracker::ContextTracker;
-use mcp_rust_proxy::context::types::{ContextType, ContextUnit, FeedbackSubmission};
+use mcp_rust_proxy::context::types::{ContextType, ContextUnit};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -327,12 +327,12 @@ async fn test_concurrent_tracking() {
                 .unwrap();
 
             let context = ContextUnit {
-                id: format!("ctx_concurrent_{}", i),
+                id: format!("ctx_concurrent_{i}"),
                 r#type: ContextType::User,
-                source: format!("source_{}", i),
+                source: format!("source_{i}"),
                 timestamp: chrono::Utc::now(),
                 embedding_id: None,
-                summary: Some(format!("Context {}", i)),
+                summary: Some(format!("Context {i}")),
                 version: 1,
                 previous_version_id: None,
                 aggregate_score: 0.0,

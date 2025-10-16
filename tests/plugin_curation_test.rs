@@ -50,6 +50,7 @@ async fn test_curation_flow_with_echo_plugin() {
             phase: PluginPhase::Response,
             user_query: Some("Explain React hooks".to_string()),
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -67,7 +68,7 @@ async fn test_curation_flow_with_echo_plugin() {
 
     // Assert output is valid
     assert!(!output.text.is_empty(), "Plugin output text is empty");
-    assert_eq!(output.continue_, true, "Plugin should continue processing");
+    assert!(output.continue_, "Plugin should continue processing");
 
     // For echo plugin, content should be preserved
     assert_eq!(
@@ -115,6 +116,7 @@ async fn test_plugin_handles_large_documents() {
             phase: PluginPhase::Response,
             user_query: Some("Summarize documentation".to_string()),
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -167,6 +169,7 @@ async fn test_plugin_chain_simulation() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -230,6 +233,7 @@ async fn test_curation_metadata_preservation() {
             phase: PluginPhase::Response,
             user_query: Some("Test query".to_string()),
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 

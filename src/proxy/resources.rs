@@ -56,8 +56,7 @@ pub async fn handle_proxy_resource(uri: &str, state: Arc<AppState>) -> Result<Va
                 get_server_resource(uri, state).await
             } else {
                 Err(crate::error::ProxyError::InvalidRequest(format!(
-                    "Unknown proxy resource: {}",
-                    uri
+                    "Unknown proxy resource: {uri}"
                 )))
             }
         }
@@ -211,7 +210,7 @@ async fn get_topology_resource(state: Arc<AppState>) -> Result<Value> {
             "name": name,
             "enabled": enabled,
             "state": format!("{:?}", *info.state.read().await),
-            "toolsCount": 0, // TODO: Cache tool counts per server
+            "toolsCount": 0, // TODO: Cache _tool counts per server
             "hasResources": false, // TODO: Track this during initialization
             "hasPrompts": false, // TODO: Track this during initialization
         }));
@@ -230,7 +229,7 @@ async fn get_topology_resource(state: Arc<AppState>) -> Result<Value> {
 }
 
 /// Get logs for a specific server (URI template pattern)
-async fn get_logs_resource(uri: &str, state: Arc<AppState>) -> Result<Value> {
+async fn get_logs_resource(uri: &str, _state: Arc<AppState>) -> Result<Value> {
     // Parse: proxy://logs/{server_name}?lines=100
     let server_name = uri
         .strip_prefix("proxy://logs/")
@@ -249,7 +248,7 @@ async fn get_logs_resource(uri: &str, state: Arc<AppState>) -> Result<Value> {
 }
 
 /// Get metrics for a specific server (URI template pattern)
-async fn get_server_metrics_resource(uri: &str, state: Arc<AppState>) -> Result<Value> {
+async fn get_server_metrics_resource(uri: &str, _state: Arc<AppState>) -> Result<Value> {
     // Parse: proxy://metrics/{server_name}
     let server_name = uri.strip_prefix("proxy://metrics/").ok_or_else(|| {
         crate::error::ProxyError::InvalidRequest("Invalid metrics URI".to_string())
@@ -290,8 +289,7 @@ async fn get_server_resource(uri: &str, state: Arc<AppState>) -> Result<Value> {
         "config" => get_server_config(server_name, state).await,
         "capabilities" => get_server_capabilities(server_name, state).await,
         _ => Err(crate::error::ProxyError::InvalidRequest(format!(
-            "Unknown server resource type: {}. Use 'config' or 'capabilities'",
-            resource_type
+            "Unknown server resource type: {resource_type}. Use 'config' or 'capabilities'"
         ))),
     }
 }
@@ -323,7 +321,7 @@ async fn get_server_config(server_name: &str, state: Arc<AppState>) -> Result<Va
     }))
 }
 
-async fn get_server_capabilities(server_name: &str, state: Arc<AppState>) -> Result<Value> {
+async fn get_server_capabilities(server_name: &str, _state: Arc<AppState>) -> Result<Value> {
     // TODO: Store capabilities from initialize response
     Ok(json!({
         "contents": [{

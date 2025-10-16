@@ -127,7 +127,7 @@ mod tests {
         }
 
         fn transport_type(&self) -> TransportType {
-            self.transport_type.clone()
+            self.transport_type
         }
     }
 
@@ -191,7 +191,7 @@ mod tests {
 
                 let response_json = serde_json::to_string(&response).unwrap();
                 conn_clone
-                    .add_response(Bytes::from(format!("{}\n", response_json)))
+                    .add_response(Bytes::from(format!("{response_json}\n")))
                     .await;
             }
         });
@@ -246,7 +246,7 @@ mod tests {
 
                 let response_json = serde_json::to_string(&response).unwrap();
                 conn_clone
-                    .add_response(Bytes::from(format!("{}\n", response_json)))
+                    .add_response(Bytes::from(format!("{response_json}\n")))
                     .await;
             }
         });
@@ -295,7 +295,7 @@ mod tests {
 
             let response_json = serde_json::to_string(&response).unwrap();
             conn_clone
-                .add_response(Bytes::from(format!("{}\n", response_json)))
+                .add_response(Bytes::from(format!("{response_json}\n")))
                 .await;
         });
 

@@ -67,7 +67,7 @@ impl RequestHandler {
         let result = match method {
             "initialize" => {
                 // Return MCP server capabilities
-                let config = self.state.config.read().await;
+                let _config = self.state.config.read().await;
                 serde_json::json!({
                     "protocolVersion": "2025-03-26",
                     "capabilities": {
@@ -154,6 +154,30 @@ impl RequestHandler {
                             });
                         }
                     }
+                } else if tool_name.starts_with("mcp__proxy__aggregator__") {
+                    let aggregator_tool =
+                        tool_name.strip_prefix("mcp__proxy__aggregator__").unwrap();
+                    match super::aggregator_tools::handle_aggregator_tool(
+                        aggregator_tool,
+                        arguments,
+                        self.state.clone(),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(e) => {
+                            return Ok(MCPResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id,
+                                result: None,
+                                error: Some(MCPError {
+                                    code: -32603,
+                                    message: e,
+                                    data: None,
+                                }),
+                            });
+                        }
+                    }
                 } else {
                     let call_params = CallParams {
                         tool: tool_name,
@@ -207,7 +231,7 @@ impl RequestHandler {
                                 result: None,
                                 error: Some(MCPError {
                                     code: -32603,
-                                    message: format!("Failed to read proxy resource: {}", e),
+                                    message: format!("Failed to read proxy resource: {e}"),
                                     data: None,
                                 }),
                             });
@@ -250,8 +274,10 @@ impl RequestHandler {
                         {
                             let tracing_tools = super::tracing_tools::get_tracing_tools();
                             let server_tools = super::server_tools::get_server_tools();
+                            let aggregator_tools = super::aggregator_tools::get_aggregator_tools();
                             tools_array.extend(tracing_tools);
                             tools_array.extend(server_tools);
+                            tools_array.extend(aggregator_tools);
                         }
 
                         // Update cache
@@ -316,14 +342,14 @@ impl RequestHandler {
                         .await
                     {
                         Ok(result) => result,
-                        Err(e) => {
+                        Err(_e) => {
                             return Ok(MCPResponse {
                                 jsonrpc: "2.0".to_string(),
                                 id,
                                 result: None,
                                 error: Some(MCPError {
                                     code: -32601,
-                                    message: format!("Prompt not found: {}", prompt_name),
+                                    message: format!("Prompt not found: {prompt_name}"),
                                     data: None,
                                 }),
                             });
@@ -345,7 +371,7 @@ impl RequestHandler {
                             result: None,
                             error: Some(MCPError {
                                 code: -32601,
-                                message: format!("Method not found: {}", method),
+                                message: format!("Method not found: {method}"),
                                 data: None,
                             }),
                         });
@@ -391,8 +417,7 @@ impl RequestHandler {
             "resources" => self.list_resources(router).await,
             "prompts" => self.list_prompts(router).await,
             _ => Err(ProxyError::InvalidRequest(format!(
-                "Unknown list type: {}",
-                list_type
+                "Unknown list type: {list_type}"
             ))),
         }
     }
@@ -466,8 +491,7 @@ impl RequestHandler {
 
         if !server_enabled {
             return Err(ProxyError::ServerNotFound(format!(
-                "Server '{}' is disabled. Enable it with mcp__proxy__server__enable",
-                server_name
+                "Server '{server_name}' is disabled. Enable it with mcp__proxy__server__enable"
             )));
         }
 
@@ -498,7 +522,7 @@ impl RequestHandler {
             "id": 1
         });
 
-        conn.send(bytes::Bytes::from(format!("{}\n", request.to_string())))
+        conn.send(bytes::Bytes::from(format!("{request}\n")))
             .await?;
 
         // Get response
@@ -544,7 +568,7 @@ impl RequestHandler {
             "id": 1
         });
 
-        conn.send(bytes::Bytes::from(format!("{}\n", request.to_string())))
+        conn.send(bytes::Bytes::from(format!("{request}\n")))
             .await?;
 
         // Get response
@@ -822,10 +846,10 @@ impl RequestHandler {
                 let context = ContextUnit {
                     id: format!("ctx_{}", Uuid::new_v4()),
                     r#type: ContextType::External,
-                    source: format!("{}::{}", server_name, tool_or_resource),
+                    source: format!("{server_name}::{tool_or_resource}"),
                     timestamp: Utc::now(),
                     embedding_id: None,
-                    summary: Some(format!("{} from {}", method, server_name)),
+                    summary: Some(format!("{method} from {server_name}")),
                     version: 1,
                     previous_version_id: None,
                     aggregate_score: 0.0,
@@ -860,8 +884,7 @@ impl RequestHandler {
                         "Request blocked - server not ready"
                     );
                     return Err(ProxyError::ServerNotReady(format!(
-                        "Server '{}' is not ready to handle '{}' requests. Server is still initializing.",
-                        server_name, method
+                        "Server '{server_name}' is not ready to handle '{method}' requests. Server is still initializing."
                     )));
                 }
             }
@@ -885,13 +908,13 @@ impl RequestHandler {
             if let Some(connection_state) = &server_info.connection_state {
                 if let Some(adapter) = connection_state.get_adapter().await {
                     request = adapter.translate_request(request).await.map_err(|e| {
-                        ProxyError::InvalidRequest(format!("Translation error: {}", e))
+                        ProxyError::InvalidRequest(format!("Translation error: {e}"))
                     })?;
                 }
             }
         }
 
-        let request_bytes = bytes::Bytes::from(format!("{}\n", request.to_string()));
+        let request_bytes = bytes::Bytes::from(format!("{request}\n"));
         conn.send(request_bytes).await?;
 
         let response_bytes = conn.recv().await?;
@@ -902,7 +925,7 @@ impl RequestHandler {
             if let Some(connection_state) = &server_info.connection_state {
                 if let Some(adapter) = connection_state.get_adapter().await {
                     response = adapter.translate_response(response).await.map_err(|e| {
-                        ProxyError::InvalidRequest(format!("Translation error: {}", e))
+                        ProxyError::InvalidRequest(format!("Translation error: {e}"))
                     })?;
                 }
             }
@@ -960,7 +983,7 @@ impl RequestHandler {
 
         // Convert arguments to string for plugin processing
         let raw_content = serde_json::to_string(&arguments).map_err(|e| {
-            ProxyError::InvalidRequest(format!("Failed to serialize arguments: {}", e))
+            ProxyError::InvalidRequest(format!("Failed to serialize arguments: {e}"))
         })?;
 
         // Create plugin input
@@ -975,6 +998,7 @@ impl RequestHandler {
                 phase: PluginPhase::Request,
                 user_query: None,
                 tool_arguments: Some(arguments.clone()),
+                mcp_servers: None,
             },
         };
 
@@ -1049,7 +1073,7 @@ impl RequestHandler {
 
         // Convert result to string for plugin processing
         let raw_content = serde_json::to_string(&result).map_err(|e| {
-            ProxyError::InvalidRequest(format!("Failed to serialize response: {}", e))
+            ProxyError::InvalidRequest(format!("Failed to serialize response: {e}"))
         })?;
 
         // Create plugin input (max_tokens and tool_arguments passed from handle_call)
@@ -1064,6 +1088,7 @@ impl RequestHandler {
                 phase: PluginPhase::Response,
                 user_query: None, // TODO: Extract from request context
                 tool_arguments,
+                mcp_servers: None,
             },
         };
 

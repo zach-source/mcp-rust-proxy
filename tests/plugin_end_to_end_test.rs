@@ -5,8 +5,7 @@
 //! - US2: Security middleware  
 //! - US3: Response transformation and chaining
 
-use mcp_rust_proxy::plugin::chain::PluginChain;
-use mcp_rust_proxy::plugin::config::{PluginAssignment, PluginConfig, ServerPluginConfig};
+use mcp_rust_proxy::plugin::config::PluginConfig;
 use mcp_rust_proxy::plugin::manager::PluginManager;
 use mcp_rust_proxy::plugin::schema::{PluginInput, PluginMetadata, PluginPhase};
 use std::collections::HashMap;
@@ -32,11 +31,10 @@ async fn test_complete_plugin_system_integration() {
     {
         use std::os::unix::fs::PermissionsExt;
         for plugin in &["path-normalizer.js", "enrich-metadata.js"] {
-            if let Ok(metadata) = std::fs::metadata(format!("tests/fixtures/plugins/{}", plugin)) {
+            if let Ok(metadata) = std::fs::metadata(format!("tests/fixtures/plugins/{plugin}")) {
                 let mut perms = metadata.permissions();
                 perms.set_mode(0o755);
-                let _ =
-                    std::fs::set_permissions(format!("tests/fixtures/plugins/{}", plugin), perms);
+                let _ = std::fs::set_permissions(format!("tests/fixtures/plugins/{plugin}"), perms);
             }
         }
     }
@@ -71,6 +69,7 @@ async fn test_complete_plugin_system_integration() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -78,7 +77,7 @@ async fn test_complete_plugin_system_integration() {
     assert!(result.is_ok(), "Echo plugin should work");
 
     println!("✓ E2E Test Part 1: Basic plugin execution works");
-    println!("  Discovered {} plugins", discovered);
+    println!("  Discovered {discovered} plugins");
 }
 
 #[tokio::test]
@@ -109,6 +108,7 @@ async fn test_plugin_system_handles_all_error_types() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -146,5 +146,5 @@ async fn test_plugin_count_and_discovery() {
     );
 
     println!("✓ E2E Plugin discovery test passed");
-    println!("  Discovered {} plugins", count);
+    println!("  Discovered {count} plugins");
 }

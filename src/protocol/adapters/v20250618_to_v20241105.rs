@@ -7,6 +7,12 @@ use serde_json::Value;
 
 pub struct V20250618ToV20241105Adapter;
 
+impl Default for V20250618ToV20241105Adapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl V20250618ToV20241105Adapter {
     pub fn new() -> Self {
         Self

@@ -48,7 +48,7 @@ fn test_serena_tool_discovery_direct() {
         }
     });
 
-    writeln!(stdin, "{}", initialize_request).expect("Failed to write initialize");
+    writeln!(stdin, "{initialize_request}").expect("Failed to write initialize");
     stdin.flush().expect("Failed to flush");
 
     // Read initialize response
@@ -56,7 +56,7 @@ fn test_serena_tool_discovery_direct() {
     reader
         .read_line(&mut response_line)
         .expect("Failed to read initialize response");
-    println!("Initialize response: {}", response_line);
+    println!("Initialize response: {response_line}");
 
     // Send tools/list request
     println!("\nStep 3: Sending tools/list request to serena...");
@@ -67,7 +67,7 @@ fn test_serena_tool_discovery_direct() {
         "params": {}
     });
 
-    writeln!(stdin, "{}", tools_list_request).expect("Failed to write tools/list");
+    writeln!(stdin, "{tools_list_request}").expect("Failed to write tools/list");
     stdin.flush().expect("Failed to flush");
 
     // Read tools/list response
@@ -76,7 +76,7 @@ fn test_serena_tool_discovery_direct() {
         .read_line(&mut tools_response)
         .expect("Failed to read tools/list response");
 
-    println!("Tools/list response:\n{}", tools_response);
+    println!("Tools/list response:\n{tools_response}");
 
     // Parse and verify tools
     let response: serde_json::Value =
@@ -93,7 +93,7 @@ fn test_serena_tool_discovery_direct() {
         }
 
         assert!(
-            tools_array.len() > 0,
+            !tools_array.is_empty(),
             "Serena should return at least one tool"
         );
     } else {
@@ -149,21 +149,18 @@ async fn test_serena_through_proxy() {
 
         println!("\nStep 3: Tools by server:");
         for (server, count) in &server_counts {
-            println!("  {}: {} tools", server, count);
+            println!("  {server}: {count} tools");
         }
 
         // Check for serena specifically
         if let Some(serena_count) = server_counts.get("serena") {
-            println!(
-                "\n✅ SUCCESS: Serena has {} tools through proxy",
-                serena_count
-            );
+            println!("\n✅ SUCCESS: Serena has {serena_count} tools through proxy");
             assert!(*serena_count > 0, "Serena should have at least one tool");
         } else {
             println!("\n❌ FAILURE: Serena tools not found in proxy response");
             println!("\nAvailable servers:");
             for server in server_counts.keys() {
-                println!("  - {}", server);
+                println!("  - {server}");
             }
             panic!("Serena tools missing from proxy");
         }
@@ -213,7 +210,7 @@ async fn test_serena_tool_call_through_proxy() {
             .get("name")
             .and_then(|n| n.as_str())
             .expect("Tool should have name");
-        println!("Found serena tool: {}", tool_name);
+        println!("Found serena tool: {tool_name}");
 
         // Try to call it (this may fail if tool requires specific args)
         let call_request = json!({
@@ -236,11 +233,11 @@ async fn test_serena_tool_call_through_proxy() {
             Ok(resp) => {
                 let status = resp.status();
                 let body = resp.text().await.unwrap_or_default();
-                println!("Call response status: {}", status);
-                println!("Call response body: {}", body);
+                println!("Call response status: {status}");
+                println!("Call response body: {body}");
             }
             Err(e) => {
-                println!("Call failed (expected for some tools): {}", e);
+                println!("Call failed (expected for some tools): {e}");
             }
         }
     } else {

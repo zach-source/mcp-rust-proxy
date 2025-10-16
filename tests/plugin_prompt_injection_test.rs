@@ -35,6 +35,7 @@ async fn test_scanner_detects_ignore_instructions() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -63,7 +64,7 @@ async fn test_scanner_detects_ignore_instructions() {
     );
 
     println!("✓ Prompt injection detection test passed");
-    println!("  Detections: {}", detections);
+    println!("  Detections: {detections}");
 }
 
 #[tokio::test]
@@ -95,6 +96,7 @@ async fn test_scanner_allows_clean_content() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -151,6 +153,7 @@ async fn test_scanner_detects_role_manipulation() {
             phase: PluginPhase::Response,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -196,6 +199,7 @@ async fn test_scanner_only_processes_response_phase() {
             phase: PluginPhase::Request, // Request phase
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 

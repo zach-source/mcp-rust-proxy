@@ -133,7 +133,7 @@ mod mcp_compliance_tests {
         // This is a documentation test - actual implementation verified by integration tests
         for method in required_methods {
             // These methods should be handled in src/proxy/handler.rs
-            assert!(!method.is_empty(), "Method {} must be implemented", method);
+            assert!(!method.is_empty(), "Method {method} must be implemented");
         }
     }
 

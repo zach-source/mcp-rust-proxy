@@ -192,7 +192,7 @@ async fn test_all_servers_reach_ready_state() {
 
         // Initialize
         state
-            .start_initialization(format!("init-{}", name))
+            .start_initialization(format!("init-{name}"))
             .await
             .unwrap();
 
@@ -229,7 +229,7 @@ async fn test_all_servers_reach_ready_state() {
 
     // All should be ready
     for (name, state) in &states {
-        assert!(state.is_ready().await, "Server {} should be ready", name);
+        assert!(state.is_ready().await, "Server {name} should be ready");
     }
 }
 
@@ -254,7 +254,7 @@ async fn test_no_cross_contamination_of_versions() {
         let state = ServerConnectionState::new(name.clone());
 
         state
-            .start_initialization(format!("init-{}", name))
+            .start_initialization(format!("init-{name}"))
             .await
             .unwrap();
 
@@ -297,8 +297,7 @@ async fn test_no_cross_contamination_of_versions() {
         assert_eq!(
             actual_version,
             Some(expected_version),
-            "Server {} version mismatch",
-            name
+            "Server {name} version mismatch"
         );
     }
 
@@ -331,7 +330,7 @@ async fn test_concurrent_multi_server_initialization() {
         let state = ServerConnectionState::new(name.to_string());
 
         state
-            .start_initialization(format!("init-{}", name))
+            .start_initialization(format!("init-{name}"))
             .await
             .unwrap();
 
@@ -372,12 +371,11 @@ async fn test_concurrent_multi_server_initialization() {
     assert_eq!(results.len(), 3);
 
     for (name, state, expected_version) in results {
-        assert!(state.is_ready().await, "Server {} should be ready", name);
+        assert!(state.is_ready().await, "Server {name} should be ready");
         assert_eq!(
             state.protocol_version().await,
             Some(expected_version),
-            "Server {} version mismatch",
-            name
+            "Server {name} version mismatch"
         );
     }
 }

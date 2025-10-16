@@ -37,7 +37,7 @@ impl PluginProcess {
             .kill_on_drop(true); // Prevent zombie processes
 
         let mut child = cmd.spawn().map_err(|e| PluginError::SpawnFailed {
-            reason: format!("Failed to spawn Node.js process: {}", e),
+            reason: format!("Failed to spawn Node.js process: {e}"),
         })?;
 
         let pid = child.id().ok_or_else(|| PluginError::SpawnFailed {
@@ -74,18 +74,18 @@ impl PluginProcess {
                 .write_all(json.as_bytes())
                 .await
                 .map_err(|e| PluginError::IoError {
-                    reason: format!("Failed to write to stdin: {}", e),
+                    reason: format!("Failed to write to stdin: {e}"),
                 })?;
 
             stdin
                 .write_all(b"\n")
                 .await
                 .map_err(|e| PluginError::IoError {
-                    reason: format!("Failed to write newline to stdin: {}", e),
+                    reason: format!("Failed to write newline to stdin: {e}"),
                 })?;
 
             stdin.flush().await.map_err(|e| PluginError::IoError {
-                reason: format!("Failed to flush stdin: {}", e),
+                reason: format!("Failed to flush stdin: {e}"),
             })?;
 
             Ok(())
@@ -104,7 +104,7 @@ impl PluginProcess {
                 .read_line(&mut line)
                 .await
                 .map_err(|e| PluginError::IoError {
-                    reason: format!("Failed to read from stdout: {}", e),
+                    reason: format!("Failed to read from stdout: {e}"),
                 })?;
 
             if line.is_empty() {
@@ -113,7 +113,7 @@ impl PluginProcess {
                 });
             }
 
-            PluginOutput::from_json(&line.trim())
+            PluginOutput::from_json(line.trim())
         } else {
             Err(PluginError::IoError {
                 reason: "stdout is not available".to_string(),
@@ -130,7 +130,7 @@ impl PluginProcess {
     /// Kill the process gracefully
     pub async fn kill(&mut self) -> Result<(), PluginError> {
         self.child.kill().await.map_err(|e| PluginError::IoError {
-            reason: format!("Failed to kill process: {}", e),
+            reason: format!("Failed to kill process: {e}"),
         })
     }
 }
@@ -207,7 +207,7 @@ impl ProcessPool {
 mod tests {
     use super::*;
     use crate::plugin::schema::{PluginMetadata, PluginPhase};
-    use std::env;
+
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -249,6 +249,7 @@ mod tests {
                 phase: PluginPhase::Response,
                 user_query: None,
                 tool_arguments: None,
+                mcp_servers: None,
             },
         };
 

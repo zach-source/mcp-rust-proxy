@@ -57,7 +57,7 @@ impl Connection for HttpSseConnection {
         // TODO: Implement actual SSE send
         let _response = self
             .client
-            .post(&format!("{}/message", self.url))
+            .post(format!("{}/message", self.url))
             .body(data)
             .send()
             .await

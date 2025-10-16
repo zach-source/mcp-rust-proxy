@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(format!("mcp_rust_proxy={}", log_level).parse().unwrap()),
+                .add_directive(format!("mcp_rust_proxy={log_level}").parse().unwrap()),
         )
         .init();
 
@@ -212,11 +212,11 @@ async fn main() -> Result<()> {
 
     // Start cache warmer for instant tool/resource availability
     let cache_warmer_state = state.clone();
-    let cache_warmer_handler = Arc::new(mcp_rust_proxy::proxy::RequestHandler::new(state.clone()));
-    let cache_warmer_handle = tokio::spawn(async move {
+    let _cache_warmer_handler = Arc::new(mcp_rust_proxy::proxy::RequestHandler::new(state.clone()));
+    let _cache_warmer_handle = tokio::spawn(async move {
         let warmer = mcp_rust_proxy::proxy::cache_warmer::CacheWarmer::new(
             cache_warmer_state,
-            cache_warmer_handler,
+            _cache_warmer_handler,
             60, // Refresh every 60 seconds
         );
         warmer.run().await;
@@ -429,7 +429,7 @@ async fn run_stdio_mode(config: mcp_rust_proxy::config::Config) -> Result<()> {
                             result: None,
                             error: Some(mcp_rust_proxy::proxy::MCPError {
                                 code: -32700,
-                                message: format!("Parse error: {}", e),
+                                message: format!("Parse error: {e}"),
                                 data: None,
                             }),
                         };

@@ -83,7 +83,7 @@ async fn test_server_ping(name: &str, config: &crate::config::ServerConfig) -> R
 
     let request_json = serde_json::to_string(&init_request)?;
     connection
-        .send(Bytes::from(format!("{}\n", request_json)))
+        .send(Bytes::from(format!("{request_json}\n")))
         .await?;
 
     // Wait for initialize response
@@ -99,7 +99,7 @@ async fn test_server_ping(name: &str, config: &crate::config::ServerConfig) -> R
     let ping_request = mcp::create_ping_request(JsonRpcId::Number(2));
     let ping_json = serde_json::to_string(&ping_request)?;
     connection
-        .send(Bytes::from(format!("{}\n", ping_json)))
+        .send(Bytes::from(format!("{ping_json}\n")))
         .await?;
 
     // Wait for ping response

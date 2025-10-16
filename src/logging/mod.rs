@@ -72,7 +72,7 @@ impl ServerLogger {
 
     async fn write_log(&self, data: &str, stream_type: &str) -> Result<()> {
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        let log_line = format!("[{}] [{}] {}\n", timestamp, stream_type, data);
+        let log_line = format!("[{timestamp}] [{stream_type}] {data}\n");
         let log_bytes = log_line.as_bytes();
 
         let mut size = self.current_log_size.lock().await;

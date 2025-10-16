@@ -24,7 +24,7 @@ pub fn content_v2_to_v1(v2: ContentV2) -> ContentV1 {
         ContentV2::Audio { mime_type, .. } => {
             // Convert audio to text description (audio not supported in v1)
             ContentV1::Text {
-                text: format!("[Audio content: {}]", mime_type),
+                text: format!("[Audio content: {mime_type}]"),
             }
         }
         ContentV2::Resource { resource } => {

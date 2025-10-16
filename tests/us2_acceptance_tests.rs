@@ -303,7 +303,7 @@ async fn us2_scenario_4_only_initialized_servers_receive_requests() {
             if !state_init_clone.can_send_request("tools/list").await {
                 let (tx, _rx) = tokio::sync::oneshot::channel();
                 let request = QueuedRequest {
-                    request_id: format!("req-init-{}", i),
+                    request_id: format!("req-init-{i}"),
                     method: "tools/list".to_string(),
                     params: None,
                     response_tx: Arc::new(Mutex::new(Some(tx))),
@@ -314,7 +314,7 @@ async fn us2_scenario_4_only_initialized_servers_receive_requests() {
             if !state_conn_clone.can_send_request("tools/list").await {
                 let (tx, _rx) = tokio::sync::oneshot::channel();
                 let request = QueuedRequest {
-                    request_id: format!("req-conn-{}", i),
+                    request_id: format!("req-conn-{i}"),
                     method: "tools/list".to_string(),
                     params: None,
                     response_tx: Arc::new(Mutex::new(Some(tx))),
@@ -337,13 +337,10 @@ async fn us2_scenario_4_only_initialized_servers_receive_requests() {
     for client_results in all_results {
         let results = client_results.unwrap();
 
-        assert_eq!(results[0].1, true, "ready-server should accept requests");
-        assert_eq!(
-            results[1].1, false,
-            "init-server should NOT accept requests"
-        );
-        assert_eq!(
-            results[2].1, false,
+        assert!(results[0].1, "ready-server should accept requests");
+        assert!(!results[1].1, "init-server should NOT accept requests");
+        assert!(
+            !results[2].1,
             "connecting-server should NOT accept requests"
         );
     }
@@ -405,7 +402,7 @@ async fn t029_verify_concurrent_safety() {
                     // Queue request
                     let (tx, _rx) = tokio::sync::oneshot::channel();
                     let request = QueuedRequest {
-                        request_id: format!("req-{}", i),
+                        request_id: format!("req-{i}"),
                         method: "tools/list".to_string(),
                         params: None,
                         response_tx: Arc::new(Mutex::new(Some(tx))),
@@ -437,9 +434,8 @@ async fn t029_verify_concurrent_safety() {
     // Verify approximately 167 requests queued (500/3 operations were queue operations)
     let queue_size = router.queued_request_count("stress-test").await;
     assert!(
-        queue_size >= 160 && queue_size <= 170,
-        "Should have ~167 queued requests, got {}",
-        queue_size
+        (160..=170).contains(&queue_size),
+        "Should have ~167 queued requests, got {queue_size}"
     );
 }
 

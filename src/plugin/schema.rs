@@ -4,7 +4,6 @@
 //! Plugins communicate with the proxy via stdin/stdout using JSON serialization.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use thiserror::Error;
 
 /// Execution phase for plugins
@@ -42,6 +41,10 @@ pub struct PluginMetadata {
     /// Original tool arguments (all parameters from the MCP call)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_arguments: Option<serde_json::Value>,
+
+    /// MCP server configurations (for aggregator plugin)
+    #[serde(skip_serializing_if = "Option::is_none", rename = "mcpServers")]
+    pub mcp_servers: Option<Vec<serde_json::Value>>,
 }
 
 /// Input data passed to plugin processes via stdin
@@ -152,7 +155,7 @@ impl PluginInput {
     /// Serialize to JSON string
     pub fn to_json(&self) -> Result<String, PluginError> {
         serde_json::to_string(self).map_err(|e| PluginError::IoError {
-            reason: format!("Failed to serialize input: {}", e),
+            reason: format!("Failed to serialize input: {e}"),
         })
     }
 }
@@ -174,7 +177,7 @@ impl PluginOutput {
     pub fn from_json(json: &str) -> Result<Self, PluginError> {
         let output: PluginOutput =
             serde_json::from_str(json).map_err(|e| PluginError::InvalidOutput {
-                reason: format!("Failed to parse output JSON: {}", e),
+                reason: format!("Failed to parse output JSON: {e}"),
             })?;
 
         output.validate()?;
@@ -199,6 +202,7 @@ mod tests {
                 phase: PluginPhase::Response,
                 user_query: Some("test query".to_string()),
                 tool_arguments: None,
+                mcp_servers: None,
             },
         };
 
@@ -260,6 +264,7 @@ mod tests {
                 phase: PluginPhase::Request,
                 user_query: None,
                 tool_arguments: None,
+                mcp_servers: None,
             },
         };
 

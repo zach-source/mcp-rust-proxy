@@ -49,6 +49,7 @@ async fn test_security_blocks_sensitive_password() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -65,8 +66,8 @@ async fn test_security_blocks_sensitive_password() {
     let output = result.unwrap();
 
     // Assert request was blocked
-    assert_eq!(
-        output.continue_, false,
+    assert!(
+        !output.continue_,
         "Security plugin should block sensitive requests"
     );
 
@@ -90,7 +91,7 @@ async fn test_security_blocks_sensitive_password() {
 
     println!("✓ Security blocking test passed");
     println!("  Blocked pattern: password");
-    println!("  Error: {}", error);
+    println!("  Error: {error}");
 }
 
 #[tokio::test]
@@ -126,6 +127,7 @@ async fn test_security_blocks_api_key() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -133,7 +135,7 @@ async fn test_security_blocks_api_key() {
     assert!(result.is_ok(), "Plugin execution failed");
 
     let output = result.unwrap();
-    assert_eq!(output.continue_, false, "API key should be blocked");
+    assert!(!output.continue_, "API key should be blocked");
     assert!(output.error.is_some(), "Should have error message");
 
     println!("✓ API key blocking test passed");
@@ -172,6 +174,7 @@ async fn test_security_allows_safe_requests() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -181,8 +184,8 @@ async fn test_security_allows_safe_requests() {
     let output = result.unwrap();
 
     // Assert request was allowed to continue
-    assert_eq!(
-        output.continue_, true,
+    assert!(
+        output.continue_,
         "Security plugin should allow safe requests"
     );
 
@@ -238,6 +241,7 @@ async fn test_security_plugin_only_processes_request_phase() {
             phase: PluginPhase::Response, // Response phase
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -247,8 +251,8 @@ async fn test_security_plugin_only_processes_request_phase() {
     let output = result.unwrap();
 
     // Assert response phase is not blocked (security only applies to requests)
-    assert_eq!(
-        output.continue_, true,
+    assert!(
+        output.continue_,
         "Security plugin should pass through responses"
     );
 
@@ -293,6 +297,7 @@ async fn test_security_blocks_bearer_token() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -300,7 +305,7 @@ async fn test_security_blocks_bearer_token() {
     assert!(result.is_ok(), "Plugin execution failed");
 
     let output = result.unwrap();
-    assert_eq!(output.continue_, false, "Bearer token should be blocked");
+    assert!(!output.continue_, "Bearer token should be blocked");
     assert!(output.error.is_some(), "Should have error message");
 
     println!("✓ Bearer token blocking test passed");
@@ -339,6 +344,7 @@ async fn test_security_blocks_private_key() {
             phase: PluginPhase::Request,
             user_query: None,
             tool_arguments: None,
+            mcp_servers: None,
         },
     };
 
@@ -346,7 +352,7 @@ async fn test_security_blocks_private_key() {
     assert!(result.is_ok(), "Plugin execution failed");
 
     let output = result.unwrap();
-    assert_eq!(output.continue_, false, "Private key should be blocked");
+    assert!(!output.continue_, "Private key should be blocked");
     assert!(output.error.is_some(), "Should have error message");
 
     println!("✓ Private key blocking test passed");
