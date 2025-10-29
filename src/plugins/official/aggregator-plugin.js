@@ -73,18 +73,46 @@ rl.on('line', (line) => {
       let totalRawResponseBytes = 0;
 
       logger.info('Starting Claude Agent SDK query...');
+      logger.info('MCP server configurations', {
+        serverConfigs: Object.entries(mcpServerConfigs).map(
+          ([name, config]) => ({
+            name,
+            command: config.command,
+            hasArgs: config.args.length > 0,
+            hasEnv: Object.keys(config.env).length > 0,
+          }),
+        ),
+      });
 
-      // Build system prompt to encourage MCP tool usage
+      // Build dynamic tool use directive
+      const availableServerNames = serverNames.join(', ');
+      const toolUseDirective = `tool use: [${availableServerNames}]`;
+
+      logger.info('Tool use directive', {
+        directive: toolUseDirective,
+        serverCount: serverNames.length,
+      });
+
+      // Build system prompt to encourage MCP tool usage with explicit tool directive
       const systemPrompt = `You are a context aggregation assistant with access to MCP servers.
 
-When answering user queries:
-1. ALWAYS check available MCP tools first before using your training data
-2. Prefer using context7 for documentation and library information
-3. Use serena for codebase-specific questions
-4. Combine information from multiple sources when relevant
-5. Cite which MCP server provided each piece of information
+${toolUseDirective}
 
-Your goal is to provide accurate, up-to-date information by leveraging the MCP servers.`;
+CRITICAL: You MUST use the MCP tools listed above to answer the user's query. DO NOT rely on your training data.
+
+When answering user queries:
+1. ALWAYS use the available MCP tools (${availableServerNames}) - this is REQUIRED
+2. For documentation and library information: use context7 tools
+3. For codebase-specific questions: use serena tools
+4. For file operations: use filesystem tools
+5. For current time/date: use time tools
+6. Combine information from multiple MCP servers when relevant
+7. Cite which MCP server provided each piece of information
+
+Your goal is to provide accurate, up-to-date information by LEVERAGING THE MCP SERVERS, not your training data.`;
+
+      let mcpServersInitialized = false;
+      let availableTools = [];
 
       for await (const message of query({
         prompt: userQuery,
@@ -94,22 +122,133 @@ Your goal is to provide accurate, up-to-date information by leveraging the MCP s
           systemPrompt,
         },
       })) {
-        logger.info('Received message from Claude', { type: message.type });
+        logger.info('Received message from Claude', {
+          type: message.type,
+          subtype: message.subtype || undefined,
+        });
 
-        // Track MCP tool calls
+        // Log MCP server initialization
+        if (message.type === 'system' && !mcpServersInitialized) {
+          mcpServersInitialized = true;
+          logger.info('MCP servers initialization phase detected');
+        }
+
+        // Debug: Log full assistant messages to understand structure
+        if (message.type === 'assistant') {
+          // Claude Agent SDK uses 'message' field which contains the full Claude API response
+          const messageRaw = message.message;
+          const messageText =
+            typeof messageRaw === 'string'
+              ? messageRaw
+              : JSON.stringify(messageRaw);
+
+          // Check for tool uses in the content array
+          let toolUses = [];
+          if (
+            typeof messageRaw === 'object' &&
+            messageRaw.content &&
+            Array.isArray(messageRaw.content)
+          ) {
+            toolUses = messageRaw.content.filter((c) => c.type === 'tool_use');
+          }
+
+          logger.info('Assistant message', {
+            hasMessage: !!message.message,
+            messageType: typeof message.message,
+            messageIsArray: Array.isArray(message.message),
+            messageLength: messageText ? messageText.length : 0,
+            hasTools: toolUses.length > 0,
+            toolCount: toolUses.length,
+            messageKeys: Object.keys(message),
+          });
+
+          // Always log the message text to see what Claude is actually saying
+          if (messageText) {
+            logger.info('Assistant text', {
+              length: messageText.length,
+              preview:
+                messageText.length > 0
+                  ? messageText.substring(0, 300)
+                  : '(empty)',
+              fullText:
+                messageText.length < 500
+                  ? messageText
+                  : `${messageText.substring(0, 500)}... (truncated)`,
+            });
+          }
+
+          // Log and COUNT any tool uses detected
+          if (toolUses.length > 0) {
+            toolCallCount += toolUses.length; // INCREMENT the counter!
+            logger.info('Assistant requested tools', {
+              toolCount: toolUses.length,
+              tools: toolUses.map((t) => t.name),
+              totalToolCalls: toolCallCount,
+            });
+          }
+        }
+
+        // Log tool availability from user messages (tool results)
+        if (message.type === 'user') {
+          // User messages have tool results in message.message.content (similar to assistant)
+          const messageRaw = message.message;
+
+          // Extract tool results from the message object
+          let toolResults = [];
+          if (
+            typeof messageRaw === 'object' &&
+            messageRaw.content &&
+            Array.isArray(messageRaw.content)
+          ) {
+            toolResults = messageRaw.content.filter(
+              (c) => c.type === 'tool_result',
+            );
+          }
+
+          // Debug log user message structure
+          logger.info('User message', {
+            hasMessage: !!message.message,
+            messageType: typeof message.message,
+            hasContentArray:
+              typeof messageRaw === 'object' &&
+              Array.isArray(messageRaw.content),
+            toolResultCount: toolResults.length,
+            messageKeys: Object.keys(message),
+          });
+
+          if (toolResults.length > 0) {
+            // Track raw MCP response sizes
+            toolResults.forEach((result) => {
+              const resultSize = JSON.stringify(result.content || '').length;
+              totalRawResponseBytes += resultSize;
+              logger.info('Tool result received', {
+                toolId: result.tool_use_id,
+                size: resultSize,
+                totalRawBytes: totalRawResponseBytes,
+              });
+            });
+
+            logger.info('All tool results summary', {
+              resultCount: toolResults.length,
+              totalBytes: totalRawResponseBytes,
+            });
+          }
+        }
+
+        // Legacy tracking - these message types don't appear in Claude Agent SDK
+        // Keeping for compatibility but tools are actually in assistant.message.content
         if (message.type === 'tool_use') {
           toolCallCount++;
-          logger.info('MCP tool called', {
+          logger.info('Direct tool_use message (legacy)', {
             tool: message.name,
             callNumber: toolCallCount,
           });
         }
 
-        // Track raw MCP response sizes
         if (message.type === 'tool_result') {
           const resultSize = JSON.stringify(message.content || '').length;
           totalRawResponseBytes += resultSize;
-          logger.info('MCP tool result', {
+          logger.info('Direct tool_result message (legacy)', {
             size: resultSize,
             totalRawBytes: totalRawResponseBytes,
           });

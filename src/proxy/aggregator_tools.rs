@@ -168,11 +168,11 @@ async fn get_mcp_server_configs(
         return server_configs;
     }
 
-    // Default behavior: Always use context7
+    // Default behavior: Start with common servers
     let mut servers_to_use = vec!["context7"];
+    let query_lower = query.to_lowercase();
 
     // Add serena if query is about code
-    let query_lower = query.to_lowercase();
     let code_keywords = [
         "code",
         "function",
@@ -191,6 +191,28 @@ async fn get_mcp_server_configs(
         tracing::info!(query_keywords = ?code_keywords, "Detected code-related query, including serena");
     }
 
+    // Add filesystem for file operations
+    let file_keywords = ["file", "read", "write", "directory", "folder", "path"];
+    if file_keywords
+        .iter()
+        .any(|keyword| query_lower.contains(keyword))
+    {
+        servers_to_use.push("filesystem");
+        tracing::info!(query_keywords = ?file_keywords, "Detected file-related query, including filesystem");
+    }
+
+    // Add fetch for web/URL operations
+    let web_keywords = ["url", "website", "web", "http", "fetch", "download"];
+    if web_keywords
+        .iter()
+        .any(|keyword| query_lower.contains(keyword))
+    {
+        servers_to_use.push("fetch");
+        tracing::info!(query_keywords = ?web_keywords, "Detected web-related query, including fetch");
+    }
+
+    // Pass the actual MCP server configs to spawn them
+    // This ensures the aggregator uses the same server instances
     for server_name in servers_to_use {
         if let Some(server_config) = config.servers.get(server_name) {
             if server_config.enabled {
