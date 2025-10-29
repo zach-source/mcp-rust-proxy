@@ -15,6 +15,8 @@ pub struct Config {
     pub context_tracing: ContextTracingConfig,
     #[serde(default)]
     pub plugins: Option<crate::plugin::PluginConfig>,
+    #[serde(default)]
+    pub claude_proxy: Option<crate::claude_proxy::ClaudeProxyConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

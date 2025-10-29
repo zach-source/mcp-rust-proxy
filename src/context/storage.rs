@@ -468,6 +468,131 @@ pub fn initialize_schema(conn: &rusqlite::Connection) -> Result<(), StorageError
         [],
     )?;
 
+    // ========== Claude API Proxy Tables ==========
+
+    // Create captured_requests table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS captured_requests (
+            id TEXT PRIMARY KEY,
+            timestamp INTEGER NOT NULL,
+            url TEXT NOT NULL,
+            method TEXT NOT NULL,
+            headers TEXT NOT NULL,
+            body BLOB NOT NULL,
+            body_json TEXT NOT NULL,
+            total_tokens INTEGER NOT NULL,
+            correlation_id TEXT UNIQUE NOT NULL
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_captured_requests_timestamp ON captured_requests(timestamp)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_captured_requests_correlation ON captured_requests(correlation_id)",
+        [],
+    )?;
+
+    // Create captured_responses table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS captured_responses (
+            id TEXT PRIMARY KEY,
+            correlation_id TEXT UNIQUE NOT NULL,
+            timestamp INTEGER NOT NULL,
+            status_code INTEGER NOT NULL,
+            headers TEXT NOT NULL,
+            body BLOB NOT NULL,
+            body_json TEXT NOT NULL,
+            latency_ms INTEGER NOT NULL,
+            proxy_latency_ms INTEGER NOT NULL,
+            response_tokens INTEGER NOT NULL,
+            FOREIGN KEY (correlation_id) REFERENCES captured_requests(correlation_id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_captured_responses_timestamp ON captured_responses(timestamp)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_captured_responses_correlation ON captured_responses(correlation_id)",
+        [],
+    )?;
+
+    // Create context_attributions table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS context_attributions (
+            id TEXT PRIMARY KEY,
+            request_id TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_name TEXT,
+            token_count INTEGER NOT NULL,
+            content_hash TEXT NOT NULL,
+            message_index INTEGER NOT NULL,
+            message_role TEXT NOT NULL,
+            FOREIGN KEY (request_id) REFERENCES captured_requests(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_context_attributions_request ON context_attributions(request_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_context_attributions_source ON context_attributions(source_name)",
+        [],
+    )?;
+
+    // Create quality_feedback table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS quality_feedback (
+            id TEXT PRIMARY KEY,
+            request_id TEXT UNIQUE NOT NULL,
+            response_id TEXT NOT NULL,
+            rating REAL NOT NULL CHECK(rating >= -1.0 AND rating <= 1.0),
+            feedback_text TEXT,
+            user_id TEXT NOT NULL,
+            submitted_at INTEGER NOT NULL,
+            FOREIGN KEY (request_id) REFERENCES captured_requests(id) ON DELETE CASCADE,
+            FOREIGN KEY (response_id) REFERENCES captured_responses(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_quality_feedback_rating ON quality_feedback(rating)",
+        [],
+    )?;
+
+    // Create context_source_metrics table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS context_source_metrics (
+            source_name TEXT PRIMARY KEY,
+            source_type TEXT NOT NULL,
+            usage_count INTEGER NOT NULL DEFAULT 0,
+            total_tokens INTEGER NOT NULL DEFAULT 0,
+            average_tokens REAL NOT NULL DEFAULT 0.0,
+            feedback_count INTEGER NOT NULL DEFAULT 0,
+            average_rating REAL NOT NULL DEFAULT 0.0,
+            last_used INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_context_source_metrics_rating ON context_source_metrics(average_rating)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_context_source_metrics_usage ON context_source_metrics(usage_count)",
+        [],
+    )?;
+
     Ok(())
 }
 

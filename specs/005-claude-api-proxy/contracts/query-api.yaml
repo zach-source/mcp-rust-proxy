@@ -1,0 +1,500 @@
+openapi: 3.0.3
+info:
+  title: Claude API Proxy - Query API
+  description: API for querying captured Claude API requests and responses with context source attribution
+  version: 1.0.0
+  contact:
+    name: MCP Rust Proxy Team
+
+servers:
+  - url: http://localhost:3001
+    description: Local development server
+
+tags:
+  - name: Requests
+    description: Query captured API requests
+  - name: Responses
+    description: Query captured API responses
+  - name: Context
+    description: Query context attribution data
+  - name: Metrics
+    description: Query aggregate metrics
+
+paths:
+  /api/claude/requests:
+    get:
+      summary: List captured requests
+      description: Retrieve a list of captured Claude API requests with optional filtering
+      tags:
+        - Requests
+      parameters:
+        - name: start_time
+          in: query
+          description: Filter requests after this timestamp (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+          example: "2025-10-28T10:00:00Z"
+        - name: end_time
+          in: query
+          description: Filter requests before this timestamp (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+          example: "2025-10-28T11:00:00Z"
+        - name: context_source
+          in: query
+          description: Filter by context source name (e.g., "context7", "serena")
+          schema:
+            type: string
+          example: "context7"
+        - name: limit
+          in: query
+          description: Maximum number of results to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          description: Number of results to skip (for pagination)
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CapturedRequestSummary'
+                  total:
+                    type: integer
+                    description: Total number of matching requests
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/claude/requests/{request_id}:
+    get:
+      summary: Get request details
+      description: Retrieve complete details for a specific captured request including context attributions
+      tags:
+        - Requests
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: Unique identifier of the captured request
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapturedRequestDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/claude/responses/{response_id}:
+    get:
+      summary: Get response details
+      description: Retrieve complete details for a specific captured response
+      tags:
+        - Responses
+      parameters:
+        - name: response_id
+          in: path
+          required: true
+          description: Unique identifier of the captured response
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapturedResponseDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/claude/contexts:
+    get:
+      summary: Query context attributions
+      description: Retrieve context attribution data for a specific request or filtered by source
+      tags:
+        - Context
+      parameters:
+        - name: request_id
+          in: query
+          description: Filter by specific request ID
+          schema:
+            type: string
+            format: uuid
+        - name: source_name
+          in: query
+          description: Filter by context source name
+          schema:
+            type: string
+        - name: source_type
+          in: query
+          description: Filter by source type
+          schema:
+            type: string
+            enum: [User, Framework, McpServer, Skill]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attributions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContextAttribution'
+                  total:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/claude/metrics/sources:
+    get:
+      summary: Get context source metrics
+      description: Retrieve aggregate metrics for all context sources or a specific source
+      tags:
+        - Metrics
+      parameters:
+        - name: source_name
+          in: query
+          description: Get metrics for a specific source
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          description: Sort by field
+          schema:
+            type: string
+            enum: [usage_count, average_rating, total_tokens]
+            default: usage_count
+        - name: order
+          in: query
+          description: Sort order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  metrics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContextSourceMetrics'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/claude/metrics/summary:
+    get:
+      summary: Get overall summary metrics
+      description: Retrieve high-level statistics about captured requests
+      tags:
+        - Metrics
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryMetrics'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    CapturedRequestSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        method:
+          type: string
+          example: "POST"
+        url:
+          type: string
+          example: "https://api.anthropic.com/v1/messages"
+        total_tokens:
+          type: integer
+          example: 1500
+        correlation_id:
+          type: string
+          format: uuid
+        has_feedback:
+          type: boolean
+          description: Whether quality feedback has been submitted for this request
+
+    CapturedRequestDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        method:
+          type: string
+        url:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: HTTP headers (sensitive headers redacted)
+        body_json:
+          type: object
+          description: Parsed JSON request body
+        total_tokens:
+          type: integer
+        correlation_id:
+          type: string
+          format: uuid
+        attributions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContextAttribution'
+        response:
+          $ref: '#/components/schemas/CapturedResponseSummary'
+        feedback:
+          $ref: '#/components/schemas/QualityFeedbackSummary'
+          nullable: true
+
+    CapturedResponseSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        correlation_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        status_code:
+          type: integer
+          example: 200
+        latency_ms:
+          type: integer
+          example: 450
+        proxy_latency_ms:
+          type: integer
+          example: 12
+        response_tokens:
+          type: integer
+          example: 800
+
+    CapturedResponseDetail:
+      allOf:
+        - $ref: '#/components/schemas/CapturedResponseSummary'
+        - type: object
+          properties:
+            headers:
+              type: object
+              additionalProperties:
+                type: string
+            body_json:
+              type: object
+              description: Parsed JSON response body
+
+    ContextAttribution:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        source_type:
+          type: string
+          enum: [User, Framework, McpServer, Skill]
+        source_name:
+          type: string
+          nullable: true
+          example: "context7"
+        token_count:
+          type: integer
+          example: 450
+        message_index:
+          type: integer
+          description: Position in the messages array (0-based)
+        message_role:
+          type: string
+          enum: [user, assistant, system]
+
+    ContextSourceMetrics:
+      type: object
+      properties:
+        source_name:
+          type: string
+          example: "context7"
+        source_type:
+          type: string
+          enum: [User, Framework, McpServer, Skill]
+        usage_count:
+          type: integer
+          example: 42
+        total_tokens:
+          type: integer
+          example: 18900
+        average_tokens:
+          type: number
+          format: double
+          example: 450.0
+        feedback_count:
+          type: integer
+          example: 15
+        average_rating:
+          type: number
+          format: double
+          minimum: -1.0
+          maximum: 1.0
+          example: 0.73
+        last_used:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    QualityFeedbackSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rating:
+          type: number
+          format: double
+          minimum: -1.0
+          maximum: 1.0
+          example: 0.8
+        feedback_text:
+          type: string
+          nullable: true
+          example: "Excellent context from context7, very relevant"
+        user_id:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+
+    SummaryMetrics:
+      type: object
+      properties:
+        total_requests:
+          type: integer
+          example: 156
+        total_tokens_sent:
+          type: integer
+          example: 234000
+        total_tokens_received:
+          type: integer
+          example: 124800
+        average_latency_ms:
+          type: number
+          format: double
+          example: 425.6
+        average_proxy_latency_ms:
+          type: number
+          format: double
+          example: 11.2
+        feedback_count:
+          type: integer
+          example: 48
+        average_rating:
+          type: number
+          format: double
+          example: 0.65
+        oldest_capture:
+          type: string
+          format: date-time
+        newest_capture:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        details:
+          type: string
+          description: Additional error details
+          nullable: true
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Invalid request parameters"
+            details: "start_time must be before end_time"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Request not found"
+            details: "No request found with ID: abc123"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Internal server error"
+            details: "Database query failed"

@@ -1,3 +1,4 @@
+pub mod claude_proxy;
 pub mod commands;
 pub mod config;
 pub mod context;

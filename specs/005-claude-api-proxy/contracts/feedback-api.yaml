@@ -1,0 +1,418 @@
+openapi: 3.0.3
+info:
+  title: Claude API Proxy - Feedback API
+  description: API for submitting and managing quality feedback on captured Claude API requests
+  version: 1.0.0
+  contact:
+    name: MCP Rust Proxy Team
+
+servers:
+  - url: http://localhost:3001
+    description: Local development server
+
+tags:
+  - name: Feedback
+    description: Submit and manage quality feedback
+
+paths:
+  /api/claude/feedback:
+    post:
+      summary: Submit quality feedback
+      description: Submit a quality rating and optional comment for a captured request-response pair
+      tags:
+        - Feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitFeedbackRequest'
+      responses:
+        '201':
+          description: Feedback submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      summary: List all feedback
+      description: Retrieve all submitted feedback with optional filtering
+      tags:
+        - Feedback
+      parameters:
+        - name: min_rating
+          in: query
+          description: Filter feedback with rating >= this value
+          schema:
+            type: number
+            format: double
+            minimum: -1.0
+            maximum: 1.0
+        - name: max_rating
+          in: query
+          description: Filter feedback with rating <= this value
+          schema:
+            type: number
+            format: double
+            minimum: -1.0
+            maximum: 1.0
+        - name: user_id
+          in: query
+          description: Filter by user ID
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          description: Filter feedback submitted after this timestamp
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          description: Filter feedback submitted before this timestamp
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: Maximum number of results
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          description: Number of results to skip
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  feedback:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FeedbackDetail'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/claude/feedback/{feedback_id}:
+    get:
+      summary: Get feedback details
+      description: Retrieve details for a specific feedback submission
+      tags:
+        - Feedback
+      parameters:
+        - name: feedback_id
+          in: path
+          required: true
+          description: Unique identifier of the feedback
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      summary: Update feedback
+      description: Update an existing feedback submission (rating and/or text)
+      tags:
+        - Feedback
+      parameters:
+        - name: feedback_id
+          in: path
+          required: true
+          description: Unique identifier of the feedback
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFeedbackRequest'
+      responses:
+        '200':
+          description: Feedback updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Delete feedback
+      description: Delete a feedback submission (also removes it from aggregate metrics)
+      tags:
+        - Feedback
+      parameters:
+        - name: feedback_id
+          in: path
+          required: true
+          description: Unique identifier of the feedback
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Feedback deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/claude/feedback/by-request/{request_id}:
+    get:
+      summary: Get feedback for a request
+      description: Retrieve feedback associated with a specific captured request
+      tags:
+        - Feedback
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: Unique identifier of the captured request
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackDetail'
+        '404':
+          description: No feedback found for this request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    SubmitFeedbackRequest:
+      type: object
+      required:
+        - request_id
+        - rating
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          description: ID of the captured request being rated
+        rating:
+          type: number
+          format: double
+          minimum: -1.0
+          maximum: 1.0
+          description: Quality rating from -1.0 (poor) to 1.0 (excellent)
+          example: 0.8
+        feedback_text:
+          type: string
+          maxLength: 2000
+          description: Optional comment explaining the rating
+          example: "Great context from context7, helped answer the question accurately"
+        user_id:
+          type: string
+          default: "local-user"
+          description: User identifier (defaults to local-user)
+      example:
+        request_id: "123e4567-e89b-12d3-a456-426614174000"
+        rating: 0.8
+        feedback_text: "Excellent response quality, context was very relevant"
+
+    UpdateFeedbackRequest:
+      type: object
+      properties:
+        rating:
+          type: number
+          format: double
+          minimum: -1.0
+          maximum: 1.0
+          description: Updated quality rating
+        feedback_text:
+          type: string
+          maxLength: 2000
+          nullable: true
+          description: Updated comment (null to remove)
+      example:
+        rating: 0.9
+        feedback_text: "Even better than I initially thought"
+
+    FeedbackResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        response_id:
+          type: string
+          format: uuid
+        rating:
+          type: number
+          format: double
+        feedback_text:
+          type: string
+          nullable: true
+        user_id:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+        affected_sources:
+          type: array
+          items:
+            type: string
+          description: List of context sources affected by this feedback
+          example: ["context7", "serena"]
+
+    FeedbackDetail:
+      allOf:
+        - $ref: '#/components/schemas/FeedbackResponse'
+        - type: object
+          properties:
+            request:
+              $ref: '#/components/schemas/RequestSummary'
+            response:
+              $ref: '#/components/schemas/ResponseSummary'
+
+    RequestSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        method:
+          type: string
+        url:
+          type: string
+        total_tokens:
+          type: integer
+
+    ResponseSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        status_code:
+          type: integer
+        latency_ms:
+          type: integer
+        response_tokens:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        details:
+          type: string
+          description: Additional error details
+          nullable: true
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_rating:
+              value:
+                error: "Invalid rating"
+                details: "Rating must be between -1.0 and 1.0"
+            missing_field:
+              value:
+                error: "Missing required field"
+                details: "request_id is required"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            request_not_found:
+              value:
+                error: "Request not found"
+                details: "No captured request found with ID: abc123"
+            feedback_not_found:
+              value:
+                error: "Feedback not found"
+                details: "No feedback found with ID: xyz789"
+
+    Conflict:
+      description: Conflict - feedback already exists for this request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Feedback already exists"
+            details: "Feedback has already been submitted for this request. Use PUT to update."
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Internal server error"
+            details: "Failed to update aggregate metrics"

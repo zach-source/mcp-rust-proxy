@@ -358,3 +358,181 @@ mod tests {
         assert!((sum - 1.0).abs() < 0.001);
     }
 }
+
+// ============================================================================
+// Claude API Proxy Data Models
+// ============================================================================
+
+/// Type of context source in Claude API requests
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SourceType {
+    /// Direct user input
+    User,
+    /// System prompt from Claude Code framework
+    Framework,
+    /// Tool result from MCP server
+    McpServer,
+    /// Skills like vectorize
+    Skill,
+}
+
+impl std::fmt::Display for SourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceType::User => write!(f, "User"),
+            SourceType::Framework => write!(f, "Framework"),
+            SourceType::McpServer => write!(f, "McpServer"),
+            SourceType::Skill => write!(f, "Skill"),
+        }
+    }
+}
+
+/// Captured Claude API request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapturedRequest {
+    /// Unique identifier (UUID)
+    pub id: String,
+    /// When the proxy received the request
+    pub timestamp: DateTime<Utc>,
+    /// Full URL (e.g., "https://api.anthropic.com/v1/messages")
+    pub url: String,
+    /// HTTP method (typically "POST")
+    pub method: String,
+    /// HTTP headers (sanitized - no API keys)
+    pub headers: std::collections::HashMap<String, String>,
+    /// Raw request body
+    pub body: Vec<u8>,
+    /// Parsed JSON for analysis
+    pub body_json: serde_json::Value,
+    /// Total token count for request
+    pub total_tokens: usize,
+    /// Links to corresponding CapturedResponse
+    pub correlation_id: String,
+}
+
+/// Captured Claude API response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapturedResponse {
+    /// Unique identifier (UUID)
+    pub id: String,
+    /// Links to corresponding CapturedRequest
+    pub correlation_id: String,
+    /// When the proxy received the response from Claude API
+    pub timestamp: DateTime<Utc>,
+    /// HTTP status code
+    pub status_code: u16,
+    /// HTTP response headers
+    pub headers: std::collections::HashMap<String, String>,
+    /// Raw response body
+    pub body: Vec<u8>,
+    /// Parsed JSON response
+    pub body_json: serde_json::Value,
+    /// Time between request forward and response receipt (ms)
+    pub latency_ms: u64,
+    /// Additional latency added by proxy operations (ms)
+    pub proxy_latency_ms: u64,
+    /// Token count for response (from API usage field)
+    pub response_tokens: usize,
+}
+
+/// Context source attribution metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextAttribution {
+    /// Unique identifier (UUID)
+    pub id: String,
+    /// Links to CapturedRequest
+    pub request_id: String,
+    /// Type of source
+    pub source_type: SourceType,
+    /// Source name (e.g., "context7", "serena", "vectorize")
+    pub source_name: Option<String>,
+    /// Number of tokens from this source
+    pub token_count: usize,
+    /// SHA-256 hash for deduplication
+    pub content_hash: String,
+    /// Position in messages array (0-based)
+    pub message_index: usize,
+    /// Message role from API request
+    pub message_role: String,
+}
+
+/// User-submitted quality feedback
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QualityFeedback {
+    /// Unique identifier (UUID)
+    pub id: String,
+    /// Links to CapturedRequest
+    pub request_id: String,
+    /// Links to CapturedResponse
+    pub response_id: String,
+    /// Quality score (-1.0 to 1.0)
+    pub rating: f64,
+    /// Optional user comment
+    pub feedback_text: Option<String>,
+    /// User identifier
+    pub user_id: String,
+    /// When feedback was submitted
+    pub submitted_at: DateTime<Utc>,
+}
+
+/// Aggregated statistics for a context source
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSourceMetrics {
+    /// Source name (e.g., "context7", "serena")
+    pub source_name: String,
+    /// Source type
+    pub source_type: SourceType,
+    /// Number of requests using this source
+    pub usage_count: usize,
+    /// Total tokens contributed across all requests
+    pub total_tokens: usize,
+    /// Average tokens per request
+    pub average_tokens: f64,
+    /// Number of feedback submissions for this source
+    pub feedback_count: usize,
+    /// Average quality rating (-1.0 to 1.0)
+    pub average_rating: f64,
+    /// Most recent request using this source
+    pub last_used: DateTime<Utc>,
+    /// First request using this source
+    pub created_at: DateTime<Utc>,
+}
+
+impl QualityFeedback {
+    /// Validate feedback constraints
+    pub fn validate(&self) -> Result<(), String> {
+        if self.rating < -1.0 || self.rating > 1.0 {
+            return Err("Feedback rating must be in range [-1.0, 1.0]".to_string());
+        }
+        if self.request_id.is_empty() {
+            return Err("Request ID is required".to_string());
+        }
+        if self.response_id.is_empty() {
+            return Err("Response ID is required".to_string());
+        }
+        if let Some(text) = &self.feedback_text {
+            if text.len() > 2000 {
+                return Err("Feedback text must be ≤ 2000 characters".to_string());
+            }
+        }
+        Ok(())
+    }
+}
+
+impl ContextAttribution {
+    /// Validate attribution constraints
+    pub fn validate(&self) -> Result<(), String> {
+        if self.request_id.is_empty() {
+            return Err("Request ID is required".to_string());
+        }
+        if matches!(self.source_type, SourceType::McpServer | SourceType::Skill)
+            && self.source_name.is_none()
+        {
+            return Err("Source name required for McpServer and Skill types".to_string());
+        }
+        if self.token_count == 0 {
+            return Err("Token count must be > 0".to_string());
+        }
+        Ok(())
+    }
+}
