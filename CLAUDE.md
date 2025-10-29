@@ -26,6 +26,32 @@ MCP Rust Proxy is a high-performance Model Context Protocol (MCP) proxy server b
 - **Structured Logging**: Version negotiation logged with structured fields (server_name, protocol_version)
 - **Deprecation Warnings**: Logs WARN for servers using 2024-11-05 (deprecated)
 
+### Aggregator Plugin (Claude Agent SDK Integration)
+- **Plugin Location**: `src/plugins/official/aggregator-plugin.js`
+- **Rust Integration**: `src/proxy/aggregator_tools.rs`
+- **Purpose**: Intelligent multi-server context aggregation using Claude to query multiple MCP servers
+- **Key Features**:
+  - Uses `@anthropic-ai/claude-agent-sdk` to orchestrate queries across multiple MCP servers
+  - Enforces MCP tool usage over training data with explicit `tool use: [servers]` directives
+  - Intelligent server selection based on query keywords:
+    - **context7**: Default for documentation/library information
+    - **serena**: Auto-selected for code-related queries (function, class, method, etc.)
+    - **filesystem**: Auto-selected for file operations (file, directory, path, etc.)
+    - **fetch**: Auto-selected for web operations (url, website, http, etc.)
+  - Comprehensive logging for debugging tool usage and server selection
+  - Tracks aggregation statistics (response sizes, processing time, tool calls)
+
+**Testing Aggregator**:
+- `test-aggregator-e2e.sh` - Basic end-to-end test with code and documentation queries
+- `test-aggregator-with-mcp-calls.sh` - Comprehensive test verifying MCP tool usage
+- Exposed as MCP tool: `mcp__proxy__aggregator__context_aggregator`
+
+**Key Considerations**:
+- System prompt emphasizes CRITICAL requirement to use MCP tools
+- Plugin spawns actual MCP server processes (same configs as proxy)
+- Logs stored at `~/.mcp-proxy/plugin-logs/aggregator-plugin.log`
+- Requires Claude API key in environment or config
+
 ### Logging System
 - **File-based Logging**: All MCP server stdout/stderr output is captured to rotating log files
 - **Log Location**: `~/.mcp-proxy/logs/{server-name}/server.log`
@@ -63,6 +89,8 @@ cargo test
 - Use `mock-logging-server.py` for testing log streaming
 - Use `test-mock-logging.yaml` config for a pre-configured test setup
 - Mock server generates continuous log output to test streaming functionality
+- Use `test-aggregator-e2e.sh` for testing aggregator plugin end-to-end
+- Use `test-aggregator-with-mcp-calls.sh` for verifying MCP tool usage in aggregator
 
 ### UI Development
 - UI is built with Yew (Rust/WASM framework)
@@ -104,6 +132,23 @@ cargo test
 - Ensure backwards compatibility with existing MCP servers
 - Log files are automatically cleaned up after 2 days
 - The proxy maintains persistent connections to MCP servers for performance
+- **Current Test Status**: 108 tests passing, 0 failed, 2 ignored
+
+## Recent Major Features (Latest First)
+1. **Aggregator Plugin Enhancements** (commit 090ef67)
+   - Enhanced MCP tool usage enforcement with explicit directives
+   - Expanded server selection heuristics (filesystem, fetch)
+   - Added comprehensive test scripts
+
+2. **Aggregator Plugin Integration** (commit 3718f95)
+   - Claude Agent SDK integration for multi-server context optimization
+   - Intelligent query routing based on content analysis
+   - Full logging and statistics tracking
+
+3. **MCP Protocol Version Support** (commits dec54ac - f05df5e)
+   - Multi-version protocol support (2024-11-05, 2025-03-26, 2025-06-18)
+   - Automatic bidirectional translation
+   - 258 total tests including performance benchmarks
 
 ## Common Issues
 
