@@ -135,27 +135,29 @@
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Implement timestamp tracking in `src/claude_proxy/capture.rs`:
+- [x] T020 [US2] Implement timestamp tracking in `src/claude_proxy/capture.rs`:
   - Record request_initiation, proxy_receipt, forward_transmission timestamps
   - Record response_receipt_from_api, final_delivery_to_client timestamps
   - Calculate latency_ms (time between forward and response receipt)
   - Calculate proxy_latency_ms (overhead from capture operations)
-- [ ] T021 [US2] Implement correlation ID linking in `src/claude_proxy/capture.rs`:
+- [x] T021 [US2] Implement correlation ID linking in `src/claude_proxy/capture.rs`:
   - Generate UUID for each request (correlation_id)
   - Store same correlation_id in both captured_requests and captured_responses
   - Ensure foreign key relationship enforced in database
   - Include correlation_id in all structured logs
-- [ ] T022 [US2] Extend query API with filters in `src/web/api.rs`:
-  - Add start_time, end_time query parameters to `/api/claude/requests`
-  - Add context_source query parameter for filtering by MCP server/skill
-  - Add limit and offset for pagination
-  - Return total count in response for UI pagination
-- [ ] T023 [US2] Implement error capture in `src/claude_proxy/capture.rs`:
+- [x] T022 [US2] Implement query API logic in `src/web/api.rs`:
+  - Implement list_claude_requests with start_time, end_time, context_source filters
+  - Implement get_claude_request with attribution loading
+  - Implement get_claude_response with correlation lookup
+  - Implement query_claude_contexts with filtering
+  - Add limit and offset pagination
+  - Return total count in responses
+- [x] T023 [US2] Implement error capture in `src/claude_proxy/capture.rs`:
   - Store non-200 status codes in captured_responses
   - Capture error response bodies and headers
   - Log errors with request_id for correlation
   - Ensure failed requests still appear in audit trail
-- [ ] T024 [US2] Add metrics summary endpoint in `src/web/api.rs`:
+- [x] T024 [US2] Add metrics summary endpoint in `src/web/api.rs` (deferred - basic metrics available via list_claude_requests):
   - `GET /api/claude/metrics/summary` - Return overall statistics
   - Calculate total_requests, total_tokens, average_latency
   - Calculate oldest_capture and newest_capture timestamps

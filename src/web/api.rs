@@ -180,44 +180,161 @@ fn claude_proxy_routes(
 }
 
 async fn list_claude_requests(
-    _query_params: std::collections::HashMap<String, String>,
+    query_params: std::collections::HashMap<String, String>,
     _state: Arc<AppState>,
 ) -> Result<impl Reply, Rejection> {
-    // TODO: Implement query logic
+    use crate::claude_proxy::capture::{CaptureStorage, QueryFilters};
+
+    // Create capture storage
+    let db_path = dirs::home_dir()
+        .ok_or_else(|| warp::reject::not_found())?
+        .join(".mcp-proxy")
+        .join("context.db");
+
+    let storage = CaptureStorage::new(db_path).map_err(|_| warp::reject::not_found())?;
+
+    // Parse query parameters
+    let limit = query_params
+        .get("limit")
+        .and_then(|s| s.parse().ok())
+        .or(Some(20));
+    let offset = query_params.get("offset").and_then(|s| s.parse().ok());
+
+    let filters = QueryFilters {
+        start_time: query_params
+            .get("start_time")
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc)),
+        end_time: query_params
+            .get("end_time")
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc)),
+        context_source: query_params.get("context_source").cloned(),
+        limit,
+        offset,
+    };
+
+    // Query requests
+    let requests = storage
+        .query_requests(filters)
+        .await
+        .map_err(|_| warp::reject::not_found())?;
+
+    let total = requests.len();
+
     let response = serde_json::json!({
-        "requests": [],
-        "total": 0,
-        "limit": 20,
-        "offset": 0
+        "requests": requests,
+        "total": total,
+        "limit": limit,
+        "offset": offset.unwrap_or(0)
     });
 
     Ok(warp::reply::json(&response))
 }
 
 async fn get_claude_request(
-    _request_id: String,
+    request_id: String,
     _state: Arc<AppState>,
 ) -> Result<warp::reply::Json, Rejection> {
-    // TODO: Implement get request details
-    Err(warp::reject::not_found())
+    use crate::claude_proxy::capture::CaptureStorage;
+
+    let db_path = dirs::home_dir()
+        .ok_or_else(|| warp::reject::not_found())?
+        .join(".mcp-proxy")
+        .join("context.db");
+
+    let storage = CaptureStorage::new(db_path).map_err(|_| warp::reject::not_found())?;
+
+    // Get request
+    let request = storage
+        .get_request(&request_id)
+        .await
+        .map_err(|_| warp::reject::not_found())?
+        .ok_or_else(|| warp::reject::not_found())?;
+
+    // Get attributions
+    let attributions = storage
+        .get_attributions_for_request(&request_id)
+        .await
+        .unwrap_or_else(|_| vec![]);
+
+    // Get response
+    let response = storage
+        .get_response_by_correlation(&request.correlation_id)
+        .await
+        .unwrap_or(None);
+
+    let response_json = serde_json::json!({
+        "request": request,
+        "attributions": attributions,
+        "response": response
+    });
+
+    Ok(warp::reply::json(&response_json))
 }
 
 async fn get_claude_response(
-    _response_id: String,
+    response_id: String,
     _state: Arc<AppState>,
 ) -> Result<warp::reply::Json, Rejection> {
-    // TODO: Implement get response details
-    Err(warp::reject::not_found())
+    use crate::claude_proxy::capture::CaptureStorage;
+    use rusqlite::Connection;
+
+    let db_path = dirs::home_dir()
+        .ok_or_else(|| warp::reject::not_found())?
+        .join(".mcp-proxy")
+        .join("context.db");
+
+    // Query response directly
+    let response = tokio::task::spawn_blocking(move || {
+        let conn = Connection::open(&db_path).map_err(|_| warp::reject::not_found())?;
+        let mut stmt = conn
+            .prepare("SELECT body_json FROM captured_responses WHERE id = ?1")
+            .map_err(|_| warp::reject::not_found())?;
+
+        let body_json: String = stmt
+            .query_row([response_id], |row| row.get(0))
+            .map_err(|_| warp::reject::not_found())?;
+
+        let json: serde_json::Value =
+            serde_json::from_str(&body_json).map_err(|_| warp::reject::not_found())?;
+
+        Ok::<_, Rejection>(json)
+    })
+    .await
+    .map_err(|_| warp::reject::not_found())??;
+
+    Ok(warp::reply::json(&response))
 }
 
 async fn query_claude_contexts(
-    _query_params: std::collections::HashMap<String, String>,
+    query_params: std::collections::HashMap<String, String>,
     _state: Arc<AppState>,
 ) -> Result<impl Reply, Rejection> {
-    // TODO: Implement context query
+    use crate::claude_proxy::capture::CaptureStorage;
+
+    let db_path = dirs::home_dir()
+        .ok_or_else(|| warp::reject::not_found())?
+        .join(".mcp-proxy")
+        .join("context.db");
+
+    let storage = CaptureStorage::new(db_path).map_err(|_| warp::reject::not_found())?;
+
+    // Get request_id filter if provided
+    let request_id = query_params.get("request_id");
+
+    let attributions = if let Some(req_id) = request_id {
+        storage
+            .get_attributions_for_request(req_id)
+            .await
+            .unwrap_or_else(|_| vec![])
+    } else {
+        vec![] // TODO: Implement query all attributions
+    };
+
     let response = serde_json::json!({
-        "attributions": [],
-        "total": 0
+        "attributions": attributions,
+        "total": attributions.len()
     });
 
     Ok(warp::reply::json(&response))

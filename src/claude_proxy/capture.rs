@@ -470,6 +470,109 @@ impl CaptureStorage {
         .map_err(|e| CaptureError::DatabaseError(format!("Task join error: {}", e)))?
     }
 
+    /// Get attributions for a request
+    pub async fn get_attributions_for_request(
+        &self,
+        request_id: &str,
+    ) -> Result<Vec<ContextAttribution>, CaptureError> {
+        let db_path = self.db_path.clone();
+        let request_id = request_id.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let conn = Connection::open(&db_path)?;
+            let mut stmt = conn.prepare(
+                "SELECT id, request_id, source_type, source_name, token_count, content_hash, message_index, message_role
+                 FROM context_attributions WHERE request_id = ?1",
+            )?;
+
+            let attributions = stmt
+                .query_map([&request_id], |row| {
+                    let source_type_str: String = row.get(2)?;
+                    let source_type = match source_type_str.as_str() {
+                        "User" => crate::context::types::SourceType::User,
+                        "Framework" => crate::context::types::SourceType::Framework,
+                        "McpServer" => crate::context::types::SourceType::McpServer,
+                        "Skill" => crate::context::types::SourceType::Skill,
+                        _ => crate::context::types::SourceType::Framework,
+                    };
+
+                    Ok(ContextAttribution {
+                        id: row.get(0)?,
+                        request_id: row.get(1)?,
+                        source_type,
+                        source_name: row.get(3)?,
+                        token_count: row.get(4)?,
+                        content_hash: row.get(5)?,
+                        message_index: row.get(6)?,
+                        message_role: row.get(7)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(attributions)
+        })
+        .await
+        .map_err(|e| CaptureError::DatabaseError(format!("Task join error: {}", e)))?
+    }
+
+    /// Get response by correlation ID
+    pub async fn get_response_by_correlation(
+        &self,
+        correlation_id: &str,
+    ) -> Result<Option<CapturedResponse>, CaptureError> {
+        // Check cache first
+        if let Some(response) = self
+            .response_cache
+            .iter()
+            .find(|r| r.correlation_id == correlation_id)
+        {
+            return Ok(Some(response.clone()));
+        }
+
+        // Fallback to database
+        let db_path = self.db_path.clone();
+        let correlation_id = correlation_id.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let conn = Connection::open(&db_path)?;
+            let mut stmt = conn.prepare(
+                "SELECT id, correlation_id, timestamp, status_code, headers, body, body_json, latency_ms, proxy_latency_ms, response_tokens
+                 FROM captured_responses WHERE correlation_id = ?1",
+            )?;
+
+            let response = stmt.query_row([&correlation_id], |row| {
+                let headers_json: String = row.get(4)?;
+                let headers: HashMap<String, String> = serde_json::from_str(&headers_json)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+
+                let body_json_str: String = row.get(6)?;
+                let body_json: serde_json::Value = serde_json::from_str(&body_json_str)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+
+                Ok(CapturedResponse {
+                    id: row.get(0)?,
+                    correlation_id: row.get(1)?,
+                    timestamp: DateTime::from_timestamp(row.get(2)?, 0).unwrap_or_else(Utc::now),
+                    status_code: row.get(3)?,
+                    headers,
+                    body: row.get(5)?,
+                    body_json,
+                    latency_ms: row.get(7)?,
+                    proxy_latency_ms: row.get(8)?,
+                    response_tokens: row.get(9)?,
+                })
+            });
+
+            match response {
+                Ok(resp) => Ok(Some(resp)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(CaptureError::DatabaseError(e.to_string())),
+            }
+        })
+        .await
+        .map_err(|e| CaptureError::DatabaseError(format!("Task join error: {}", e)))?
+    }
+
     /// Sanitize sensitive headers (remove API keys)
     fn sanitize_headers(headers: &mut HashMap<String, String>) {
         let sensitive_headers = ["authorization", "x-api-key", "api-key"];
@@ -487,6 +590,16 @@ impl CaptureStorage {
             for lower_key in lower_keys {
                 headers.insert(lower_key, "[REDACTED]".to_string());
             }
+        }
+    }
+}
+
+impl Clone for CaptureStorage {
+    fn clone(&self) -> Self {
+        Self {
+            db_path: self.db_path.clone(),
+            request_cache: self.request_cache.clone(),
+            response_cache: self.response_cache.clone(),
         }
     }
 }
