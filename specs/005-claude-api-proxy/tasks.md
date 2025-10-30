@@ -86,7 +86,7 @@
   - Forward decrypted request to api.anthropic.com
   - Maintain authentication headers unchanged
   - Return response to caller
-- [ ] T013 [US1] Implement capture storage in `src/claude_proxy/capture.rs`:
+- [x] T013 [US1] Implement capture storage in `src/claude_proxy/capture.rs`:
   - `CaptureStorage` struct with db (SqlitePool) and cache (DashMap)
   - `capture_request(req)` - Store request, return UUID
   - `capture_response(resp, req_id)` - Store response, link to request
