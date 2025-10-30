@@ -43,9 +43,14 @@ impl FeedbackManager {
     }
 
     /// Submit quality feedback for a request
-    pub async fn submit_feedback(&self, mut feedback: QualityFeedback) -> Result<String, FeedbackError> {
+    pub async fn submit_feedback(
+        &self,
+        mut feedback: QualityFeedback,
+    ) -> Result<String, FeedbackError> {
         // Validate
-        feedback.validate().map_err(FeedbackError::ValidationError)?;
+        feedback
+            .validate()
+            .map_err(FeedbackError::ValidationError)?;
 
         // Generate ID if not provided
         if feedback.id.is_empty() {
@@ -124,23 +129,31 @@ impl FeedbackManager {
     }
 
     /// Update aggregate metrics for all context sources in a request
-    pub async fn update_aggregate_metrics(&self, feedback: &QualityFeedback) -> Result<(), FeedbackError> {
+    pub async fn update_aggregate_metrics(
+        &self,
+        feedback: &QualityFeedback,
+    ) -> Result<(), FeedbackError> {
         let db_path = self.db_path.clone();
         let request_id = feedback.request_id.clone();
         let rating = feedback.rating;
 
         tokio::task::spawn_blocking(move || {
             let conn = Connection::open(&db_path)?;
-            let tx = conn.unchecked_transaction()?;
 
             // Get all attributions for this request
-            let mut stmt = tx.prepare(
-                "SELECT source_name FROM context_attributions WHERE request_id = ?1 AND source_name IS NOT NULL",
-            )?;
+            let mut source_names = Vec::new();
+            {
+                let mut stmt = conn.prepare(
+                    "SELECT source_name FROM context_attributions WHERE request_id = ?1 AND source_name IS NOT NULL",
+                )?;
+                let mut rows = stmt.query([&request_id])?;
+                while let Some(row) = rows.next()? {
+                    source_names.push(row.get::<_, String>(0)?);
+                }
+            } // stmt dropped here
 
-            let source_names: Vec<String> = stmt
-                .query_map([&request_id], |row| row.get(0))?
-                .collect::<Result<Vec<_>, _>>()?;
+            // Start transaction for updates
+            let tx = conn.unchecked_transaction()?;
 
             // Update metrics for each source
             for source_name in &source_names {
@@ -202,7 +215,10 @@ impl FeedbackManager {
     }
 
     /// Get feedback by request ID
-    pub async fn get_feedback_by_request(&self, request_id: &str) -> Result<Option<QualityFeedback>, FeedbackError> {
+    pub async fn get_feedback_by_request(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<QualityFeedback>, FeedbackError> {
         let db_path = self.db_path.clone();
         let request_id = request_id.to_string();
 
@@ -221,7 +237,8 @@ impl FeedbackManager {
                     rating: row.get(3)?,
                     feedback_text: row.get(4)?,
                     user_id: row.get(5)?,
-                    submitted_at: chrono::DateTime::from_timestamp(row.get(6)?, 0).unwrap_or_else(Utc::now),
+                    submitted_at: chrono::DateTime::from_timestamp(row.get(6)?, 0)
+                        .unwrap_or_else(Utc::now),
                 })
             });
 
@@ -277,7 +294,10 @@ mod tests {
             submitted_at: Utc::now(),
         };
 
-        let fb_id = manager.submit_feedback(feedback).await.expect("Failed to submit feedback");
+        let fb_id = manager
+            .submit_feedback(feedback)
+            .await
+            .expect("Failed to submit feedback");
         assert!(fb_id.starts_with("fb_"));
     }
 
