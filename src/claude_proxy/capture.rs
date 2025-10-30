@@ -99,8 +99,15 @@ impl CaptureStorage {
         // Sanitize sensitive headers
         Self::sanitize_headers(&mut headers);
 
-        // Parse body as JSON
-        let body_json: serde_json::Value = serde_json::from_slice(&body)?;
+        // Parse body as JSON (handle empty bodies for GET requests)
+        let body_json: serde_json::Value = if body.is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_slice(&body).unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "Failed to parse request body as JSON, using empty object");
+                serde_json::json!({})
+            })
+        };
 
         // Generate context attributions
         let mut attributions = AttributionEngine::analyze_request(&body_json);

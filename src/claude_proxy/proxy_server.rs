@@ -162,23 +162,33 @@ impl ProxyServer {
             .await
             .map_err(|e| ProxyError::Tls(format!("TLS handshake failed: {}", e)))?;
 
-        tracing::debug!(domain = %domain, "TLS handshake with client completed");
+        tracing::info!(domain = %domain, "TLS handshake with client completed, starting HTTP server");
 
         // Handle HTTP over TLS
         let io = TokioIo::new(tls_stream);
 
         let server = Arc::new(self.clone());
         let service = service_fn(move |req| {
+            tracing::info!("SERVICE FUNCTION CALLED!"); // Debug log
             let server = server.clone();
             async move { server.proxy_request(req).await }
         });
 
-        if let Err(e) = hyper::server::conn::http1::Builder::new()
+        tracing::info!("About to serve HTTP/1.1 connection over TLS");
+
+        match hyper::server::conn::http1::Builder::new()
             .serve_connection(io, service)
             .await
         {
-            tracing::warn!(error = %e, "HTTP connection error");
+            Ok(_) => {
+                tracing::info!("HTTP connection served successfully");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "HTTP connection error");
+            }
         }
+
+        tracing::info!("Connection handling complete");
 
         Ok(())
     }
