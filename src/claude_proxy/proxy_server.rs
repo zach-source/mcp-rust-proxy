@@ -193,6 +193,13 @@ impl ProxyServer {
         // Extract request details
         let method = req.method().to_string();
         let uri = req.uri().to_string();
+
+        tracing::info!(
+            method = %method,
+            uri = %uri,
+            "Proxying HTTP request through MITM"
+        );
+
         let headers: std::collections::HashMap<String, String> = req
             .headers()
             .iter()
@@ -207,10 +214,13 @@ impl ProxyServer {
             .map_err(|e| ProxyError::Http(e.to_string()))?
             .to_bytes();
 
+        tracing::debug!(body_size = body_bytes.len(), "Read request body");
+
         // Capture request (fail-open)
         let capture_start = Instant::now();
         let correlation_id = if self.config.capture_enabled {
-            self.capture_storage
+            match self
+                .capture_storage
                 .capture_request(
                     uri.clone(),
                     method.clone(),
@@ -218,8 +228,18 @@ impl ProxyServer {
                     body_bytes.to_vec(),
                 )
                 .await
-                .ok()
+            {
+                Ok(corr_id) => {
+                    tracing::info!(correlation_id = %corr_id, "Request captured successfully");
+                    Some(corr_id)
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to capture request, continuing anyway");
+                    None
+                }
+            }
         } else {
+            tracing::debug!("Capture disabled in config");
             None
         };
         let capture_latency = capture_start.elapsed();
@@ -231,28 +251,73 @@ impl ProxyServer {
 
         let total_latency = start_time.elapsed();
 
+        // Extract response body before returning
+        let response_status = response.status();
+        let response_headers_map: std::collections::HashMap<String, String> = response
+            .headers()
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+            .collect();
+
+        // Read response body
+        let response_body_bytes = response
+            .into_body()
+            .collect()
+            .await
+            .map_err(|e| ProxyError::Http(format!("Failed to read response body: {}", e)))?
+            .to_bytes();
+
+        tracing::debug!(
+            status = response_status.as_u16(),
+            body_size = response_body_bytes.len(),
+            "Read response body"
+        );
+
         // Capture response (fail-open)
         if let Some(corr_id) = correlation_id {
-            let response_headers: std::collections::HashMap<String, String> = response
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-
-            let _ = self
+            match self
                 .capture_storage
                 .capture_response(
                     &corr_id,
-                    response.status().as_u16(),
-                    response_headers,
-                    body_bytes.to_vec(),
+                    response_status.as_u16(),
+                    response_headers_map.clone(),
+                    response_body_bytes.to_vec(),
                     total_latency.as_millis() as u64,
                     capture_latency.as_millis() as u64,
                 )
-                .await;
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!(
+                        correlation_id = %corr_id,
+                        status = response_status.as_u16(),
+                        "Response captured successfully"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to capture response, continuing anyway");
+                }
+            }
         }
 
-        Ok(response)
+        // Rebuild response to return to client
+        let mut final_response = Response::builder()
+            .status(response_status)
+            .body(Full::new(response_body_bytes))
+            .map_err(|e| ProxyError::Http(e.to_string()))?;
+
+        // Copy headers
+        for (key, value) in response_headers_map {
+            if let Ok(header_name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
+                if let Ok(header_value) = hyper::header::HeaderValue::from_str(&value) {
+                    final_response
+                        .headers_mut()
+                        .insert(header_name, header_value);
+                }
+            }
+        }
+
+        Ok(final_response)
     }
 
     /// Forward request to actual Claude API
