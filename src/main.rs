@@ -194,6 +194,73 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Start Claude API proxy if enabled
+    let claude_proxy_handle = if let Some(claude_proxy_config) = &config.claude_proxy {
+        if claude_proxy_config.enabled {
+            info!("Starting Claude API proxy");
+
+            // Try to initialize TLS handler
+            let tls_result = mcp_rust_proxy::claude_proxy::TlsHandler::new();
+            if let Err(e) = &tls_result {
+                error!("Failed to initialize TLS handler: {}", e);
+                error!("Claude API proxy will not start");
+                None
+            } else {
+                let tls_handler = Arc::new(tls_result.unwrap());
+                info!(
+                    ca_cert_path = ?tls_handler.ca_cert_path(),
+                    "TLS handler initialized - CA certificate ready for installation"
+                );
+
+                // Initialize capture storage
+                let db_path = dirs::home_dir()
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            "Home directory not found",
+                        )
+                    })?
+                    .join(".mcp-proxy")
+                    .join("context.db");
+
+                let capture_result =
+                    mcp_rust_proxy::claude_proxy::capture::CaptureStorage::new(db_path);
+                if let Err(e) = &capture_result {
+                    error!("Failed to initialize capture storage: {}", e);
+                    error!("Claude API proxy will not start");
+                    None
+                } else {
+                    let capture_storage = Arc::new(capture_result.unwrap());
+                    info!("Capture storage initialized");
+
+                    // Create and start proxy server
+                    let proxy_server = Arc::new(mcp_rust_proxy::claude_proxy::ProxyServer::new(
+                        claude_proxy_config.clone(),
+                        tls_handler,
+                        capture_storage,
+                    ));
+
+                    let proxy_server_clone = proxy_server.clone();
+                    let bind_address = claude_proxy_config.bind_address.clone();
+                    Some(tokio::spawn(async move {
+                        info!(
+                            bind_address = %bind_address,
+                            "Claude API proxy starting"
+                        );
+                        if let Err(e) = proxy_server_clone.start().await {
+                            error!("Claude API proxy error: {}", e);
+                        }
+                    }))
+                }
+            }
+        } else {
+            info!("Claude API proxy is disabled in configuration");
+            None
+        }
+    } else {
+        None
+    };
+
     // Start server manager
     let server_manager = ServerManager::new(state.clone(), shutdown_rx.resubscribe());
     let manager_handle = tokio::spawn(async move {
