@@ -175,13 +175,13 @@
 
 ### Implementation for User Story 3
 
-- [ ] T025 [US3] Implement feedback manager in `src/context/feedback.rs`:
+- [x] T025 [US3] Implement feedback manager in `src/context/feedback.rs`:
   - `FeedbackManager` struct with database pool
   - `submit_feedback(feedback)` - Validate and store feedback
   - `update_feedback(id, updates)` - Modify existing feedback
   - `delete_feedback(id)` - Remove feedback and update metrics
   - `get_feedback_by_request(request_id)` - Query feedback
-- [ ] T026 [US3] Implement aggregate metrics update in `src/context/feedback.rs`:
+- [x] T026 [US3] Implement aggregate metrics update in `src/context/feedback.rs`:
   - `update_aggregate_metrics(feedback)` - Find all attributions for request
   - For each unique source_name, update context_source_metrics:
     - Increment feedback_count

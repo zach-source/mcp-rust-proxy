@@ -62,6 +62,7 @@
 
 pub mod error;
 pub mod evolution;
+pub mod feedback;
 pub mod query;
 pub mod storage;
 pub mod tracker;
