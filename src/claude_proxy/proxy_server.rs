@@ -16,7 +16,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::net::{TcpListener, TcpStream};
-use tokio_rustls::TlsAcceptor;
 
 #[derive(Debug, Error)]
 pub enum ProxyError {
@@ -91,31 +90,79 @@ impl ProxyServer {
         }
     }
 
-    /// Handle an incoming TCP connection
-    async fn handle_connection(&self, stream: TcpStream) -> Result<(), ProxyError> {
-        // TODO: Extract SNI properly - for now, assume api.anthropic.com
-        let domain = "api.anthropic.com";
+    /// Handle an incoming TCP connection (HTTP CONNECT proxy)
+    async fn handle_connection(&self, mut stream: TcpStream) -> Result<(), ProxyError> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-        // Check if we should intercept this domain
-        if !Self::should_intercept(domain) {
-            tracing::debug!(domain = domain, "Skipping non-Claude API traffic");
+        // Read the HTTP CONNECT request
+        let mut buffer = vec![0u8; 4096];
+        let n = stream
+            .read(&mut buffer)
+            .await
+            .map_err(|e| ProxyError::Io(e))?;
+
+        let request_data = String::from_utf8_lossy(&buffer[..n]);
+
+        tracing::debug!(
+            request_preview = %request_data.lines().next().unwrap_or(""),
+            "Received request"
+        );
+
+        // Parse CONNECT request
+        if !request_data.starts_with("CONNECT ") {
+            tracing::warn!("Non-CONNECT request received, ignoring");
             return Ok(());
         }
 
-        // Get TLS server config for domain
+        // Extract host:port from CONNECT request
+        let target = request_data
+            .lines()
+            .next()
+            .and_then(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    Some(parts[1].to_string())
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| ProxyError::Http("Invalid CONNECT request".to_string()))?;
+
+        // Extract domain from target (remove port)
+        let domain = target.split(':').next().unwrap_or(&target).to_string();
+
+        tracing::debug!(target = %target, domain = %domain, "Parsed CONNECT request");
+
+        // Check if we should intercept this domain
+        if !Self::should_intercept(&domain) {
+            tracing::debug!(domain = %domain, "Skipping non-Claude API traffic");
+            // Send connection established but don't MITM
+            stream
+                .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await?;
+            return Ok(());
+        }
+
+        // Send 200 Connection Established to client
+        stream
+            .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            .await?;
+
+        tracing::debug!(domain = %domain, "Sent 200 Connection Established");
+
+        // Now perform TLS handshake with client using cert for target domain
         let server_config = self
             .tls_handler
-            .get_server_config(domain)
+            .get_server_config(&domain)
             .map_err(|e| ProxyError::Tls(e.to_string()))?;
 
-        // Accept TLS connection
-        let acceptor = TlsAcceptor::from(server_config);
+        let acceptor = tokio_rustls::TlsAcceptor::from(server_config);
         let tls_stream = acceptor
             .accept(stream)
             .await
-            .map_err(|e| ProxyError::Tls(e.to_string()))?;
+            .map_err(|e| ProxyError::Tls(format!("TLS handshake failed: {}", e)))?;
 
-        tracing::debug!("TLS handshake completed");
+        tracing::debug!(domain = %domain, "TLS handshake with client completed");
 
         // Handle HTTP over TLS
         let io = TokioIo::new(tls_stream);

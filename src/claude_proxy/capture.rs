@@ -65,6 +65,13 @@ pub struct CaptureStorage {
 impl CaptureStorage {
     /// Create a new capture storage instance
     pub fn new(db_path: std::path::PathBuf) -> Result<Self, CaptureError> {
+        // Initialize database schema
+        {
+            let conn = Connection::open(&db_path)?;
+            crate::context::storage::initialize_schema(&conn)
+                .map_err(|e| CaptureError::DatabaseError(format!("Schema init failed: {}", e)))?;
+        }
+
         Ok(Self {
             db_path,
             request_cache: Arc::new(DashMap::new()),
