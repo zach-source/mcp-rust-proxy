@@ -108,16 +108,16 @@
   - Call `AttributionEngine::analyze_request()`
   - Store attributions with request in database
   - Calculate total_tokens from all attributions
-- [ ] T017 [US1] Implement query API endpoints in `src/web/api.rs`:
+- [x] T017 [US1] Implement query API endpoints in `src/web/api.rs`:
   - `GET /api/claude/requests` - List requests with filters (per query-api.yaml)
   - `GET /api/claude/requests/:id` - Get request details with attributions
   - `GET /api/claude/responses/:id` - Get response details
   - `GET /api/claude/contexts` - Query context attributions
   - Add routes to main router
-- [ ] T018 [US1] Add domain filtering in `src/claude_proxy/proxy_server.rs`:
+- [x] T018 [US1] Add domain filtering in `src/claude_proxy/proxy_server.rs`:
   - `should_intercept(sni)` - Check if domain ends with anthropic.com or claude.ai
   - Only intercept Claude API traffic, pass through others transparently
-- [ ] T019 [US1] Add structured logging in `src/claude_proxy/`:
+- [x] T019 [US1] Add structured logging in `src/claude_proxy/`:
   - Use tracing for all operations with structured fields (request_id, source_name)
   - Log certificate generation events
   - Log capture success/failure with request_id

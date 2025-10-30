@@ -96,6 +96,12 @@ impl ProxyServer {
         // TODO: Extract SNI properly - for now, assume api.anthropic.com
         let domain = "api.anthropic.com";
 
+        // Check if we should intercept this domain
+        if !Self::should_intercept(domain) {
+            tracing::debug!(domain = domain, "Skipping non-Claude API traffic");
+            return Ok(());
+        }
+
         // Get TLS server config for domain
         let server_config = self
             .tls_handler
@@ -279,6 +285,11 @@ impl ProxyServer {
         );
 
         Ok(hyper_response)
+    }
+
+    /// Check if a domain should be intercepted (only Claude API traffic)
+    fn should_intercept(domain: &str) -> bool {
+        domain.ends_with("anthropic.com") || domain.ends_with("claude.ai")
     }
 }
 

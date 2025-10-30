@@ -26,9 +26,12 @@ pub fn routes(
     let config = config_routes(state.clone());
 
     // Context tracing endpoints
-    let trace = trace_routes(state);
+    let trace = trace_routes(state.clone());
 
-    warp::path("api").and(servers.or(logs).or(metrics).or(config).or(trace))
+    // Claude proxy endpoints
+    let claude = claude_proxy_routes(state);
+
+    warp::path("api").and(servers.or(logs).or(metrics).or(config).or(trace).or(claude))
 }
 
 fn servers_routes(
@@ -139,6 +142,85 @@ fn with_state(
     state: Arc<AppState>,
 ) -> impl Filter<Extract = (Arc<AppState>,), Error = std::convert::Infallible> + Clone {
     warp::any().map(move || state.clone())
+}
+
+// ============================================================================
+// Claude API Proxy Routes
+// ============================================================================
+
+fn claude_proxy_routes(
+    state: Arc<AppState>,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    let list_requests = warp::path!("claude" / "requests")
+        .and(warp::get())
+        .and(warp::query::<std::collections::HashMap<String, String>>())
+        .and(with_state(state.clone()))
+        .and_then(list_claude_requests);
+
+    let get_request = warp::path!("claude" / "requests" / String)
+        .and(warp::get())
+        .and(with_state(state.clone()))
+        .and_then(get_claude_request);
+
+    let get_response = warp::path!("claude" / "responses" / String)
+        .and(warp::get())
+        .and(with_state(state.clone()))
+        .and_then(get_claude_response);
+
+    let query_contexts = warp::path!("claude" / "contexts")
+        .and(warp::get())
+        .and(warp::query::<std::collections::HashMap<String, String>>())
+        .and(with_state(state))
+        .and_then(query_claude_contexts);
+
+    list_requests
+        .or(get_request)
+        .or(get_response)
+        .or(query_contexts)
+}
+
+async fn list_claude_requests(
+    _query_params: std::collections::HashMap<String, String>,
+    _state: Arc<AppState>,
+) -> Result<impl Reply, Rejection> {
+    // TODO: Implement query logic
+    let response = serde_json::json!({
+        "requests": [],
+        "total": 0,
+        "limit": 20,
+        "offset": 0
+    });
+
+    Ok(warp::reply::json(&response))
+}
+
+async fn get_claude_request(
+    _request_id: String,
+    _state: Arc<AppState>,
+) -> Result<warp::reply::Json, Rejection> {
+    // TODO: Implement get request details
+    Err(warp::reject::not_found())
+}
+
+async fn get_claude_response(
+    _response_id: String,
+    _state: Arc<AppState>,
+) -> Result<warp::reply::Json, Rejection> {
+    // TODO: Implement get response details
+    Err(warp::reject::not_found())
+}
+
+async fn query_claude_contexts(
+    _query_params: std::collections::HashMap<String, String>,
+    _state: Arc<AppState>,
+) -> Result<impl Reply, Rejection> {
+    // TODO: Implement context query
+    let response = serde_json::json!({
+        "attributions": [],
+        "total": 0
+    });
+
+    Ok(warp::reply::json(&response))
 }
 
 async fn list_servers(state: Arc<AppState>) -> Result<impl Reply, Rejection> {
