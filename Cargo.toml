@@ -83,6 +83,7 @@ rustls-pemfile = "2"
 rcgen = "0.13"
 tokio-rustls = "0.26"
 http = "1"
+sha2 = "0.10"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }

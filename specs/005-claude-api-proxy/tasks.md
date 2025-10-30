@@ -97,13 +97,13 @@
   - Forward request to Claude API regardless of capture success (fail-open)
   - Call `capture_response()` after receiving response
   - Return response to client even if capture fails
-- [ ] T015 [US1] Implement context attribution engine in `src/claude_proxy/attribution.rs`:
+- [x] T015 [US1] Implement context attribution engine in `src/claude_proxy/attribution.rs`:
   - `AttributionEngine` struct with analysis methods
   - `analyze_request(body_json)` - Parse messages array, return Vec<ContextAttribution>
   - `identify_source_type(message)` - Classify as User/Framework/McpServer/Skill
   - `extract_mcp_server_name(tool_use_id)` - Parse server name from tool ID
   - `count_tokens(content)` - Count tokens for attribution
-- [ ] T016 [US1] Integrate attribution into capture in `src/claude_proxy/capture.rs`:
+- [x] T016 [US1] Integrate attribution into capture in `src/claude_proxy/capture.rs`:
   - Parse request body as JSON
   - Call `AttributionEngine::analyze_request()`
   - Store attributions with request in database

@@ -3,6 +3,7 @@
 //! This module handles capturing complete request/response data and storing it
 //! persistently for later review and analysis.
 
+use crate::claude_proxy::attribution::AttributionEngine;
 use crate::context::types::{CapturedRequest, CapturedResponse, ContextAttribution};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -77,7 +78,7 @@ impl CaptureStorage {
         Ok(conn)
     }
 
-    /// Capture a request and store it
+    /// Capture a request and store it with context attributions
     pub async fn capture_request(
         &self,
         url: String,
@@ -94,6 +95,17 @@ impl CaptureStorage {
         // Parse body as JSON
         let body_json: serde_json::Value = serde_json::from_slice(&body)?;
 
+        // Generate context attributions
+        let mut attributions = AttributionEngine::analyze_request(&body_json);
+
+        // Set request_id for all attributions
+        for attr in &mut attributions {
+            attr.request_id = request_id.clone();
+        }
+
+        // Calculate total tokens from attributions
+        let total_tokens: usize = attributions.iter().map(|a| a.token_count).sum();
+
         let request = CapturedRequest {
             id: request_id.clone(),
             timestamp: Utc::now(),
@@ -102,7 +114,7 @@ impl CaptureStorage {
             headers,
             body,
             body_json,
-            total_tokens: 0, // Will be updated when attributions are added
+            total_tokens,
             correlation_id: correlation_id.clone(),
         };
 
@@ -110,15 +122,19 @@ impl CaptureStorage {
         self.request_cache
             .insert(request_id.clone(), request.clone());
 
-        // Store in database (async)
+        // Store in database with attributions (async)
         let db_path = self.db_path.clone();
         let request_clone = request.clone();
+        let attributions_clone = attributions.clone();
         tokio::task::spawn_blocking(move || {
             let conn = Connection::open(&db_path)?;
+            let tx = conn.unchecked_transaction()?;
+
+            // Insert request
             let headers_json = serde_json::to_string(&request_clone.headers)?;
             let body_json_str = serde_json::to_string(&request_clone.body_json)?;
 
-            conn.execute(
+            tx.execute(
                 "INSERT INTO captured_requests (id, timestamp, url, method, headers, body, body_json, total_tokens, correlation_id)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 rusqlite::params![
@@ -134,11 +150,33 @@ impl CaptureStorage {
                 ],
             )?;
 
+            // Insert attributions
+            for attr in &attributions_clone {
+                tx.execute(
+                    "INSERT INTO context_attributions (id, request_id, source_type, source_name, token_count, content_hash, message_index, message_role)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    rusqlite::params![
+                        &attr.id,
+                        &attr.request_id,
+                        &attr.source_type.to_string(),
+                        &attr.source_name,
+                        attr.token_count,
+                        &attr.content_hash,
+                        attr.message_index,
+                        &attr.message_role,
+                    ],
+                )?;
+            }
+
+            tx.commit()?;
+
             tracing::info!(
                 request_id = %request_clone.id,
                 correlation_id = %request_clone.correlation_id,
                 url = %request_clone.url,
-                "Captured request"
+                attribution_count = attributions_clone.len(),
+                total_tokens = request_clone.total_tokens,
+                "Captured request with attributions"
             );
 
             Ok::<_, CaptureError>(())
