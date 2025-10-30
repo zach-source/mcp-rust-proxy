@@ -71,17 +71,17 @@
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Implement basic HTTPS proxy server in `src/claude_proxy/proxy_server.rs`:
+- [x] T010 [US1] Implement basic HTTPS proxy server in `src/claude_proxy/proxy_server.rs`:
   - `ProxyServer` struct with config, tls_handler, capture_storage fields
   - `start()` method to bind and listen on configured port
   - `handle_connection(stream)` method for accepting TCP connections
   - `proxy_request(req)` method for basic forwarding logic
-- [ ] T011 [US1] Implement TLS handshake in `src/claude_proxy/proxy_server.rs`:
+- [x] T011 [US1] Implement TLS handshake in `src/claude_proxy/proxy_server.rs`:
   - Extract SNI (Server Name Indication) from client hello
   - Get server config for domain from tls_handler
   - Accept TLS connection using tokio_rustls::TlsAcceptor
   - Pass decrypted stream to HTTP handler
-- [ ] T012 [US1] Implement client-side TLS for forwarding in `src/claude_proxy/proxy_server.rs`:
+- [x] T012 [US1] Implement client-side TLS for forwarding in `src/claude_proxy/proxy_server.rs`:
   - Create hyper-rustls HTTPS connector with client_config
   - Forward decrypted request to api.anthropic.com
   - Maintain authentication headers unchanged
@@ -92,7 +92,7 @@
   - `capture_response(resp, req_id)` - Store response, link to request
   - `get_request(id)` - Retrieve from cache or DB
   - `query_requests(filters)` - Filter by time range, context source
-- [ ] T014 [US1] Integrate capture into proxy flow in `src/claude_proxy/proxy_server.rs`:
+- [x] T014 [US1] Integrate capture into proxy flow in `src/claude_proxy/proxy_server.rs`:
   - Call `capture_request()` before forwarding (non-blocking)
   - Forward request to Claude API regardless of capture success (fail-open)
   - Call `capture_response()` after receiving response
